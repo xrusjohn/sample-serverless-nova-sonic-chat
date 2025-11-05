@@ -8,6 +8,7 @@ import { voiceConfigurations } from './voices';
 import { getWeatherTool } from './tools/weather';
 import { closeMcpServers, getMcpToolSpecs } from '@/agent/tools/mcp';
 import { McpConfig } from '@/common/schemas';
+import { generateAccountNumberTool } from './tools/account-number';
 
 export const main = async (
   sessionId: string,
@@ -40,6 +41,7 @@ ${voiceConfig.additionalPrompt}
     const tools = [
       //
       getWeatherTool,
+      generateAccountNumberTool,
     ];
     console.log(`Initializing mcp tools... ${Object.keys(mcpConfig.mcpServers).join(',')}`);
     const mcpTools = await getMcpToolSpecs(sessionId, mcpConfig);
@@ -51,7 +53,6 @@ ${voiceConfig.additionalPrompt}
     // Without this sleep, the error below is sometimes thrown
     // "Subscription has not been initialized"
     await new Promise((s) => setTimeout(s, 1000));
-
     // Start response stream
     while (true) {
       console.log('starting/resuming a session');

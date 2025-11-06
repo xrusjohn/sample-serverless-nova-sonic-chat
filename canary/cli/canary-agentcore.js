@@ -2,7 +2,7 @@
 
 require('dotenv').config();
 const { runTwoTurnCanary, publishMetrics } = require('./canary-core');
-const { BedrockAgentRuntimeClient, InvokeAgentCommand } = require('@aws-sdk/client-bedrock-agent-runtime');
+const { BedrockAgentCoreClient, InvokeAgentRuntimeCommand } = require('@aws-sdk/client-bedrock-agentcore');
 const path = require('path');
 
 // WebSocket polyfill
@@ -10,27 +10,30 @@ const ws = require('ws');
 Object.assign(global, { WebSocket: ws });
 ws.setMaxListeners(100);
 
-const bedrockAgentRuntime = new BedrockAgentRuntimeClient({});
+const agentCore = new BedrockAgentCoreClient({});
 
 async function invokeAgentCoreAgent(params) {
-  const agentId = process.env.AGENTCORE_AGENT_ID;
-  const agentAliasId = process.env.AGENTCORE_AGENT_ALIAS_ID || 'TSTALIASID';
+  const agentRuntimeArn = process.env.AGENT_CORE_RUNTIME_ARN;
   
-  if (!agentId) {
-    throw new Error('AGENTCORE_AGENT_ID environment variable not set');
+  if (!agentRuntimeArn) {
+    throw new Error('AGENT_CORE_RUNTIME_ARN environment variable not set');
   }
 
-  // AgentCore invocation - this is a placeholder
-  // You'll need to implement the actual AgentCore invocation based on your setup
-  // This might involve calling a different API or using a different SDK
-  
-  console.log(`⚠️  AgentCore invocation not yet implemented`);
-  console.log(`   Agent ID: ${agentId}`);
-  console.log(`   Alias ID: ${agentAliasId}`);
-  
-  // TODO: Implement AgentCore-specific invocation
-  // For now, return success to allow testing the structure
-  return { success: true };
+  try {
+    const res = await agentCore.send(
+      new InvokeAgentRuntimeCommand({
+        agentRuntimeArn,
+        runtimeSessionId: params.sessionId,
+        payload: JSON.stringify(params),
+        contentType: 'application/json',
+      })
+    );
+
+    return { success: true };
+  } catch (error) {
+    console.error('Failed to invoke AgentCore:', error);
+    return { success: false, error: error.message };
+  }
 }
 
 async function main() {

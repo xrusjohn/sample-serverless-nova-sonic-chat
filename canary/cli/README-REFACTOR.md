@@ -37,8 +37,7 @@ AWS_REGION=us-east-1
 AGENT_HANDLER_FUNCTION_NAME=YourLambdaFunctionName
 
 # AgentCore-specific
-AGENTCORE_AGENT_ID=your-agent-id
-AGENTCORE_AGENT_ALIAS_ID=TSTALIASID
+AGENT_CORE_RUNTIME_ARN=arn:aws:bedrock-agentcore:us-east-1:123456789012:runtime/your-runtime-id
 ```
 
 ## Creating a New Deployment Type

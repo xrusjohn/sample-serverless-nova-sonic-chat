@@ -59,6 +59,8 @@ export default function VoiceChatClient({ initialConversations, userId }: VoiceC
   const [endReason, setEndReason] = useState('');
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const isActiveRef = useRef(isActive);
+  const [isRecordingTest, setIsRecordingTest] = useState(false);
+  const testAudioChunks = useRef<string[]>([]);
 
   const messagesWithoutSystemPrompt = useMemo(() => {
     return messages.filter((m) => m.role !== 'system');
@@ -197,6 +199,88 @@ export default function VoiceChatClient({ initialConversations, userId }: VoiceC
     } catch (error) {
       setMcpConfigError('Invalid JSON format');
     }
+  };
+
+  const startTestRecording = async () => {
+    if (isRecordingTest) return;
+    
+    try {
+      setIsRecordingTest(true);
+      testAudioChunks.current = [];
+      
+      // Use the same audio setup as the main app
+      const audioStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      });
+      
+      const audioContext = new AudioContext({ sampleRate: 16000 });
+      const sourceNode = audioContext.createMediaStreamSource(audioStream);
+      const processor = audioContext.createScriptProcessor(512, 1, 1);
+      
+      processor.onaudioprocess = (e) => {
+        const inputData = e.inputBuffer.getChannelData(0);
+        const pcmData = new Int16Array(inputData.length);
+        
+        for (let i = 0; i < inputData.length; i++) {
+          pcmData[i] = Math.max(-1, Math.min(1, inputData[i])) * 0x7FFF;
+        }
+        
+        const base64Data = arrayBufferToBase64(pcmData.buffer);
+        testAudioChunks.current.push(base64Data);
+      };
+      
+      sourceNode.connect(processor);
+      processor.connect(audioContext.destination);
+      
+      // Record for 3 seconds
+      setTimeout(() => {
+        processor.disconnect();
+        sourceNode.disconnect();
+        audioStream.getTracks().forEach(track => track.stop());
+        audioContext.close();
+        
+        // Save the recorded audio
+        saveTestAudio();
+        setIsRecordingTest(false);
+      }, 3000);
+      
+    } catch (error) {
+      console.error('Error recording test audio:', error);
+      setIsRecordingTest(false);
+      toast.error('Failed to record test audio');
+    }
+  };
+  
+  const saveTestAudio = async () => {
+    try {
+      const response = await fetch('/api/save-test-audio', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ audioChunks: testAudioChunks.current })
+      });
+      
+      if (response.ok) {
+        toast.success('Test audio saved! Canary will use this audio.');
+      } else {
+        toast.error('Failed to save test audio');
+      }
+    } catch (error) {
+      console.error('Error saving test audio:', error);
+      toast.error('Failed to save test audio');
+    }
+  };
+  
+  const arrayBufferToBase64 = (buffer: ArrayBufferLike) => {
+    const binary = [];
+    const bytes = new Uint8Array(buffer);
+    for (let i = 0; i < bytes.byteLength; i++) {
+      binary.push(String.fromCharCode(bytes[i]));
+    }
+    return btoa(binary.join(''));
   };
 
   return (
@@ -354,6 +438,17 @@ export default function VoiceChatClient({ initialConversations, userId }: VoiceC
                     </Button>
                   </div>
                 </div>
+              </div>
+              <div className="mb-4">
+                <label className="block text-sm font-medium mb-2">Test Audio:</label>
+                <Button
+                  onClick={startTestRecording}
+                  disabled={isRecordingTest}
+                  variant="outline"
+                  size="sm"
+                >
+                  {isRecordingTest ? 'Recording... (3s)' : 'Record Test Audio for Canary'}
+                </Button>
               </div>
             </div>
           )}

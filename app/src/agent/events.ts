@@ -168,6 +168,11 @@ export const processResponseStream = async (
           await enqueueAudioOutput(channel, jsonResponse.event.audioOutput.content);
         } else if (jsonResponse.event?.contentEnd && jsonResponse.event?.contentEnd?.type === 'AUDIO') {
           await forcePublishAudioOutput(channel);
+          await new Promise(resolve => setTimeout(resolve, 500));
+          await dispatchEvent(channel, {
+            event: 'audioStop',
+            data: {},
+          });
         } else if (jsonResponse.event?.contentStart && jsonResponse.event?.contentStart?.type === 'TEXT') {
           let generationStage = null;
 
@@ -263,7 +268,7 @@ export const processResponseStream = async (
             const result = await stream.executeToolAndSendResult(toolUse.toolUseId, toolUse.toolName, toolUse.content);
             console.log('✅ Tool execution result:', JSON.stringify({ toolName: toolUse.toolName, result: result?.substring(0, 200) + '...' }));
           } catch (toolError) {
-            console.error('❌ Tool execution failed:', JSON.stringify({ toolName: toolUse.toolName, error: toolError.message }));
+            console.error('❌ Tool execution failed:', JSON.stringify({ toolName: toolUse.toolName, error: toolError instanceof Error ? toolError.message : String(toolError) }));
             throw toolError;
           }
         }

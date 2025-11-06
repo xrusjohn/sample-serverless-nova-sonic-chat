@@ -1,0 +1,90 @@
+{
+  "testId": "2a781dbd-8df5-4c43-9a3d-149956648dce",
+  "sessionId": "af5e475e-fc64-47a6-afa5-9bc761b479c2",
+  "timestamp": "2025-11-06T17:30:22.825Z",
+  "events": [
+    {
+      "type": "text_chunk",
+      "timestamp": "2025-11-06T17:30:25.364Z",
+      "role": "user",
+      "content": "nova"
+    },
+    {
+      "type": "text_chunk",
+      "timestamp": "2025-11-06T17:30:26.184Z",
+      "role": "assistant",
+      "content": "Hi there! It looks like you mentioned \"nova.\" Could you please provide more details about what you're referring to?"
+    },
+    {
+      "type": "text_chunk",
+      "timestamp": "2025-11-06T17:30:29.369Z",
+      "role": "assistant",
+      "content": "  Are you talking about a star, a type of fireworks, or something else?"
+    },
+    {
+      "type": "text_chunk",
+      "timestamp": "2025-11-06T17:30:30.514Z",
+      "role": "assistant",
+      "content": "  I'd love to help you out!"
+    },
+    {
+      "type": "text_chunk",
+      "timestamp": "2025-11-06T17:30:32.233Z",
+      "role": "assistant",
+      "content": "{ \"interrupted\" : true }"
+    },
+    {
+      "type": "text_chunk",
+      "timestamp": "2025-11-06T17:30:32.341Z",
+      "role": "assistant",
+      "content": "Hi there! It looks like you mentioned \"nova.\" Could you please provide more details about what you're referring to?"
+    },
+    {
+      "type": "text_chunk",
+      "timestamp": "2025-11-06T17:30:32.468Z",
+      "role": "user",
+      "content": "morning nova"
+    },
+    {
+      "type": "text_chunk",
+      "timestamp": "2025-11-06T17:30:33.101Z",
+      "role": "assistant",
+      "content": "Good morning! If you're talking about a \"nova,\" it's a term often used in astronomy to describe a sudden increase in brightness from a star."
+    }
+  ],
+  "turns": [
+    {
+      "turn": 1,
+      "userInput": "nova",
+      "assistantResponse": "Hi there! It looks like you mentioned \"nova.\" Could you please provide more details about what you're referring to?",
+      "timestamp": "2025-11-06T17:30:24.198Z"
+    },
+    {
+      "turn": 2,
+      "userInput": "morning nova",
+      "assistantResponse": "{ \"interrupted\" : true }Hi there! It looks like you mentioned \"nova.\" Could you please provide more details about what you're referring to?Good morning! If you're talking about a \"nova,\" it's a term often used in astronomy to describe a sudden increase in brightness from a star.",
+      "timestamp": "2025-11-06T17:30:29.180Z"
+    }
+  ],
+  "usage_summary": {
+    "delta_sum_calculated": {
+      "total_input_tokens": {
+        "speechTokens": 0,
+        "textTokens": 0,
+        "sum": 0
+      },
+      "total_output_tokens": {
+        "speechTokens": 0,
+        "textTokens": 0,
+        "sum": 0
+      },
+      "total_tokens": 0
+    },
+    "final_total": null,
+    "cost_estimate": {
+      "input_cost": 0,
+      "output_cost": 0,
+      "total_cost": 0
+    }
+  }
+}

@@ -100,6 +100,7 @@ export const useSpeechToSpeech = (userId: string, onSessionComplete: (endReason:
   const channelRef = useRef<EventsChannel | null>(null);
   const audioInputQueue = useRef<string[]>([]);
   const [errorMessages, setErrorMessages] = useState<string[]>([]);
+  const [uploadedAudio, setUploadedAudio] = useState<ArrayBuffer | null>(null);
   const router = useRouter();
   console.log(`re-rendered ${JSON.stringify({ isActive, isLoading })}`);
 
@@ -250,7 +251,7 @@ export const useSpeechToSpeech = (userId: string, onSessionComplete: (endReason:
     isRecording = true;
 
     console.log(`startRecording`);
-    if (!audioPlayerRef.current || !audioRecorderRef.current || !systemPromptRef.current) {
+    if (!audioPlayerRef.current || !systemPromptRef.current) {
       throw new Error('ref not set!');
     }
 
@@ -258,14 +259,22 @@ export const useSpeechToSpeech = (userId: string, onSessionComplete: (endReason:
 
     await audioPlayerRef.current.start();
 
-    // Start recording using the AudioRecorder and check for success
-    const success = await audioRecorderRef.current.start();
+    // If we have uploaded audio, send it instead of starting microphone
+    if (uploadedAudio) {
+      await sendUploadedAudio();
+    } else {
+      if (!audioRecorderRef.current) {
+        throw new Error('audioRecorder ref not set!');
+      }
+      // Start recording using the AudioRecorder and check for success
+      const success = await audioRecorderRef.current.start();
 
-    if (!success) {
-      throw new Error('audioRecorder failed to start!');
+      if (!success) {
+        throw new Error('audioRecorder failed to start!');
+      }
+
+      processAudioInput();
     }
-
-    processAudioInput();
   };
 
   const stopRecording = async () => {
@@ -318,6 +327,59 @@ export const useSpeechToSpeech = (userId: string, onSessionComplete: (endReason:
     [channelRef, setIsActive, setIsLoading]
   );
 
+  const sendUploadedAudio = async () => {
+    if (!uploadedAudio || !channelRef.current) return;
+
+    try {
+      // Pause microphone recording while sending uploaded audio
+      if (audioRecorderRef.current) {
+        audioRecorderRef.current.stop();
+      }
+
+      // Convert ArrayBuffer to base64
+      const uint8Array = new Uint8Array(uploadedAudio);
+      const binaryString = Array.from(uint8Array, byte => String.fromCharCode(byte)).join('');
+      const base64Audio = btoa(binaryString);
+
+      // Send in chunks like live audio
+      const chunkSize = 1024;
+      const chunks = [];
+      for (let i = 0; i < base64Audio.length; i += chunkSize) {
+        chunks.push(base64Audio.slice(i, i + chunkSize));
+      }
+
+      // Send audio chunks in batches
+      const batchSize = 20;
+      for (let i = 0; i < chunks.length; i += batchSize) {
+        const batch = chunks.slice(i, i + batchSize);
+        await dispatchEvent(channelRef.current, {
+          event: 'audioInput',
+          data: {
+            blobs: batch,
+            sequence: Math.floor(i / batchSize)
+          }
+        });
+        // Small delay between batches to simulate real-time
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+
+      console.log('Uploaded audio sent successfully');
+      
+      // Note: Microphone will need to be restarted manually after file upload
+    } catch (error) {
+      console.error('Error sending uploaded audio:', error);
+      // Note: Microphone will need to be restarted manually after error
+    }
+  };
+
+  const setAudioFile = (audioData: ArrayBuffer) => {
+    setUploadedAudio(audioData);
+  };
+
+  const clearAudioFile = () => {
+    setUploadedAudio(null);
+  };
+
   return {
     messages,
     isActive,
@@ -328,5 +390,8 @@ export const useSpeechToSpeech = (userId: string, onSessionComplete: (endReason:
     closeSession,
     toggleMute,
     errorMessages,
+    setAudioFile,
+    clearAudioFile,
+    hasUploadedAudio: !!uploadedAudio,
   };
 };

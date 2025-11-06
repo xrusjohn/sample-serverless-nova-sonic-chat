@@ -1,0 +1,131 @@
+{
+  "testId": "32bb9695-ee89-45d7-8202-934ef54df1ed",
+  "sessionId": "0ac63068-ec11-4354-ac34-e008a767ded4",
+  "timestamp": "2025-11-06T17:22:27.126Z",
+  "events": [
+    {
+      "direction": "btoc",
+      "event": "ready",
+      "data": {}
+    },
+    {
+      "direction": "btoc",
+      "event": "textStart",
+      "data": {
+        "id": "d444a72a-277d-46b3-8712-013f49df26d3",
+        "role": "user",
+        "generationStage": "FINAL"
+      }
+    },
+    {
+      "direction": "btoc",
+      "event": "textStop",
+      "data": {
+        "id": "d444a72a-277d-46b3-8712-013f49df26d3",
+        "stopReason": "PARTIAL_TURN"
+      }
+    },
+    {
+      "direction": "btoc",
+      "event": "textOutput",
+      "data": {
+        "id": "d444a72a-277d-46b3-8712-013f49df26d3",
+        "role": "user",
+        "content": "nova"
+      }
+    },
+    {
+      "direction": "btoc",
+      "event": "textStart",
+      "data": {
+        "id": "1d7ede2e-847c-47c8-a5f9-0e8b558018f1",
+        "role": "assistant",
+        "generationStage": "SPECULATIVE"
+      }
+    },
+    {
+      "direction": "btoc",
+      "event": "textOutput",
+      "data": {
+        "id": "1d7ede2e-847c-47c8-a5f9-0e8b558018f1",
+        "role": "assistant",
+        "content": "Hi there! It looks like you mentioned \"nova.\" Could you please provide more details about what you're referring to?"
+      }
+    },
+    {
+      "direction": "btoc",
+      "event": "textStop",
+      "data": {
+        "id": "1d7ede2e-847c-47c8-a5f9-0e8b558018f1",
+        "stopReason": "PARTIAL_TURN"
+      }
+    },
+    {
+      "direction": "btoc",
+      "event": "audioStop",
+      "data": {}
+    },
+    {
+      "direction": "btoc",
+      "event": "textStart",
+      "data": {
+        "id": "c2aad13b-3a7f-4a91-83d4-871b5d6d67ac",
+        "role": "assistant",
+        "generationStage": "SPECULATIVE"
+      }
+    },
+    {
+      "direction": "btoc",
+      "event": "textStop",
+      "data": {
+        "id": "c2aad13b-3a7f-4a91-83d4-871b5d6d67ac",
+        "stopReason": "PARTIAL_TURN"
+      }
+    },
+    {
+      "direction": "btoc",
+      "event": "textOutput",
+      "data": {
+        "id": "c2aad13b-3a7f-4a91-83d4-871b5d6d67ac",
+        "role": "assistant",
+        "content": "  Are you talking about a star, a type of fireworks, or something else?"
+      }
+    },
+    {
+      "direction": "btoc",
+      "event": "audioStop",
+      "data": {}
+    },
+    {
+      "direction": "btoc",
+      "event": "textStart",
+      "data": {
+        "id": "5bd5e092-95eb-40f0-9b20-e668fee6047c",
+        "role": "assistant",
+        "generationStage": "SPECULATIVE"
+      }
+    },
+    {
+      "direction": "btoc",
+      "event": "textOutput",
+      "data": {
+        "id": "5bd5e092-95eb-40f0-9b20-e668fee6047c",
+        "role": "assistant",
+        "content": "  I'd love to help you out!"
+      }
+    },
+    {
+      "direction": "btoc",
+      "event": "textStop",
+      "data": {
+        "id": "5bd5e092-95eb-40f0-9b20-e668fee6047c",
+        "stopReason": "PARTIAL_TURN"
+      }
+    },
+    {
+      "direction": "btoc",
+      "event": "audioStop",
+      "data": {}
+    }
+  ]
+}

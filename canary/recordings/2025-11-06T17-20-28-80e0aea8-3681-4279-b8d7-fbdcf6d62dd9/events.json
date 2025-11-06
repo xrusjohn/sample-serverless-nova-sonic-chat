@@ -1,0 +1,183 @@
+{
+  "testId": "80e0aea8-3681-4279-b8d7-fbdcf6d62dd9",
+  "sessionId": "0491a167-2583-4b7c-b20d-e2ee2e5d5833",
+  "timestamp": "2025-11-06T17:20:28.354Z",
+  "events": [
+    {
+      "direction": "btoc",
+      "event": "ready",
+      "data": {}
+    },
+    {
+      "direction": "btoc",
+      "event": "textStart",
+      "data": {
+        "id": "3c3b5b76-a4f4-4356-9074-e4f23f0a827d",
+        "role": "user",
+        "generationStage": "FINAL"
+      }
+    },
+    {
+      "direction": "btoc",
+      "event": "textStop",
+      "data": {
+        "id": "3c3b5b76-a4f4-4356-9074-e4f23f0a827d",
+        "stopReason": "PARTIAL_TURN"
+      }
+    },
+    {
+      "direction": "btoc",
+      "event": "textOutput",
+      "data": {
+        "id": "3c3b5b76-a4f4-4356-9074-e4f23f0a827d",
+        "role": "user",
+        "content": "nova"
+      }
+    },
+    {
+      "direction": "btoc",
+      "event": "textStart",
+      "data": {
+        "id": "0ee03418-5310-43db-9ca6-44afb07a21db",
+        "role": "assistant",
+        "generationStage": "SPECULATIVE"
+      }
+    },
+    {
+      "direction": "btoc",
+      "event": "textOutput",
+      "data": {
+        "id": "0ee03418-5310-43db-9ca6-44afb07a21db",
+        "role": "assistant",
+        "content": "Hi there! It looks like you mentioned \"nova.\" Could you please provide more details about what you're referring to?"
+      }
+    },
+    {
+      "direction": "btoc",
+      "event": "textStop",
+      "data": {
+        "id": "0ee03418-5310-43db-9ca6-44afb07a21db",
+        "stopReason": "PARTIAL_TURN"
+      }
+    },
+    {
+      "direction": "btoc",
+      "event": "textStart",
+      "data": {
+        "id": "9dbb1371-ba5c-4cb6-aea2-87ee1fd5b768",
+        "role": "assistant",
+        "generationStage": "SPECULATIVE"
+      }
+    },
+    {
+      "direction": "btoc",
+      "event": "audioStop",
+      "data": {}
+    },
+    {
+      "direction": "btoc",
+      "event": "textOutput",
+      "data": {
+        "id": "9dbb1371-ba5c-4cb6-aea2-87ee1fd5b768",
+        "role": "assistant",
+        "content": "  Are you talking about a star, a type of fireworks, or something else?"
+      }
+    },
+    {
+      "direction": "btoc",
+      "event": "textStop",
+      "data": {
+        "id": "9dbb1371-ba5c-4cb6-aea2-87ee1fd5b768",
+        "stopReason": "PARTIAL_TURN"
+      }
+    },
+    {
+      "direction": "btoc",
+      "event": "audioStop",
+      "data": {}
+    },
+    {
+      "direction": "btoc",
+      "event": "textOutput",
+      "data": {
+        "id": "43cc4203-dcf1-4798-bc28-6cca75be2b11",
+        "role": "assistant",
+        "content": "  I'd love to help you out!"
+      }
+    },
+    {
+      "direction": "btoc",
+      "event": "textStart",
+      "data": {
+        "id": "43cc4203-dcf1-4798-bc28-6cca75be2b11",
+        "role": "assistant",
+        "generationStage": "SPECULATIVE"
+      }
+    },
+    {
+      "direction": "btoc",
+      "event": "textStop",
+      "data": {
+        "id": "43cc4203-dcf1-4798-bc28-6cca75be2b11",
+        "stopReason": "PARTIAL_TURN"
+      }
+    },
+    {
+      "direction": "btoc",
+      "event": "audioStop",
+      "data": {}
+    },
+    {
+      "direction": "btoc",
+      "event": "textStart",
+      "data": {
+        "id": "7510bc89-5421-4aa1-b868-71083788e663",
+        "role": "assistant",
+        "generationStage": "FINAL"
+      }
+    },
+    {
+      "direction": "btoc",
+      "event": "textOutput",
+      "data": {
+        "id": "7510bc89-5421-4aa1-b868-71083788e663",
+        "role": "assistant",
+        "content": "{ \"interrupted\" : true }"
+      }
+    },
+    {
+      "direction": "btoc",
+      "event": "textStop",
+      "data": {
+        "id": "7510bc89-5421-4aa1-b868-71083788e663",
+        "stopReason": "INTERRUPTED"
+      }
+    },
+    {
+      "direction": "btoc",
+      "event": "textStart",
+      "data": {
+        "id": "365938e5-8061-4f95-836b-99205591b69a",
+        "role": "assistant",
+        "generationStage": "FINAL"
+      }
+    },
+    {
+      "direction": "btoc",
+      "event": "textOutput",
+      "data": {
+        "id": "365938e5-8061-4f95-836b-99205591b69a",
+        "role": "assistant",
+        "content": "Hi there! It looks like you mentioned \"nova.\" Could you please provide more details about what you're referring to?"
+      }
+    },
+    {
+      "direction": "btoc",
+      "event": "textStop",
+      "data": {
+        "id": "365938e5-8061-4f95-836b-99205591b69a",
+        "stopReason": "PARTIAL_TURN"
+      }
+    }
+  ]
+}

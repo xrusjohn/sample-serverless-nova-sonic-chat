@@ -6,6 +6,14 @@ import { Handler } from 'aws-lambda';
 import z from 'zod';
 import { trace } from '@opentelemetry/api';
 
+const originalLog = console.log;
+console.log = function(...args: any[]) {
+  const message = args.join(' ');
+  if (!message.includes('audioOutput')) {
+    originalLog.apply(console, args);
+  }
+};
+
 const eventSchema = z.object({
   sessionId: z.string(),
   userId: z.string(),

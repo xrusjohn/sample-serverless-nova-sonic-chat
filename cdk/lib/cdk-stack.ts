@@ -5,6 +5,7 @@ import { Database } from './constructs/database';
 import { Agent } from './constructs/agent';
 import { Auth } from './constructs/auth';
 import { Service } from './constructs/service';
+import { Canary } from './constructs/canary';
 
 interface CdkStackProps extends cdk.StackProps {
   /**
@@ -48,6 +49,15 @@ export class CdkStack extends cdk.Stack {
       auth,
       eventBus,
       agentHandler: agent.handler,
+    });
+
+    // Canary for automated health checks
+    new Canary(this, 'Canary', {
+      eventBus,
+      serviceApiEndpoint: service.endpoint,
+      bedrockRegion: props.bedrockRegion!,
+      agentHandler: agent.handler,
+      tableName: database.table.tableName,
     });
   }
 }

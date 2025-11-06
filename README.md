@@ -12,6 +12,7 @@ This is a sample implementation for deploying a Nova Sonic application using ser
 - MCP (Model Context Protocol) support - Connect to various external services and tools via MCP servers
 - Automatic resume for conversations exceeding 8 minutes (current Nova Sonic limit)
 - Chat UI implementation using Next.js + shadcn
+- Automated canary testing system for continuous monitoring
 
 ## Deployment Instructions
 
@@ -157,6 +158,17 @@ An example mcp config is below:
   }
 }
 ```
+
+### Canary Testing
+
+The application includes an automated canary testing system that validates functionality every 15 minutes:
+
+- **End-to-end testing**: Performs complete two-turn conversations to test the full system
+- **Continuous monitoring**: Automatically detects issues in production
+- **Test artifacts**: Stores results and audio files in S3 for debugging
+- **Real-time validation**: Uses the same AppSync Events and DynamoDB as the main application
+
+For detailed information, see [canary/README.md](canary/README.md).
 
 ### Other Notes
 

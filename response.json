@@ -1,0 +1,1 @@
+{"statusCode":500,"body":"{\"testId\":\"08fc53b3-e052-45cf-b26d-392054600f97\",\"success\":false,\"error\":\"Canary test timeout - conversation did not complete\",\"message\":\"Two-turn canary test failed\"}"}

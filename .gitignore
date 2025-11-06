@@ -1,2 +1,4 @@
 backend
 .kiro
+node_modules
+**/node_modules

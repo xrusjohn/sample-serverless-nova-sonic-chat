@@ -1,0 +1,23 @@
+{
+  "name": "sonic-canary-cli",
+  "version": "1.0.0",
+  "description": "Headless CLI canary for Nova Sonic chat",
+  "main": "canary.js",
+  "bin": {
+    "sonic-canary": "canary.js"
+  },
+  "scripts": {
+    "start": "node canary.js"
+  },
+  "dependencies": {
+    "@aws-sdk/client-cloudwatch": "^3.0.0",
+    "@aws-sdk/client-lambda": "^3.0.0",
+    "@aws-sdk/client-s3": "^3.0.0",
+    "@aws-sdk/credential-providers": "^3.0.0",
+    "aws-amplify": "^6.0.0",
+    "dotenv": "^17.2.3",
+    "uuid": "^9.0.0",
+    "web-audio-api": "^0.2.2",
+    "ws": "^8.0.0"
+  }
+}

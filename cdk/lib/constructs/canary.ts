@@ -55,7 +55,7 @@ export class Canary extends Construct {
         BEDROCK_REGION: bedrockRegion,
         AGENT_HANDLER_FUNCTION_NAME: agentHandler.functionName,
         TABLE_NAME: tableName,
-        TURN1_AUDIO_FILE: 'good_morning_nova.wav',
+        TURN1_AUDIO_FILE: 'hi.wav',
         TURN2_AUDIO_FILE: 'good_morning_nova.wav',
       },
     });
@@ -86,10 +86,10 @@ export class Canary extends Construct {
     // Grant permission to invoke the agent handler
     agentHandler.grantInvoke(canaryFunction);
 
-    // EventBridge rule to trigger canary every 15 minutes (temporarily disabled)
-    // new Rule(this, 'CanarySchedule', {
-    //   schedule: Schedule.rate(Duration.minutes(15)),
-    //   targets: [new LambdaFunction(canaryFunction)],
-    // });
+    // EventBridge rule to trigger canary every 15 minutes
+    new Rule(this, 'CanarySchedule', {
+      schedule: Schedule.rate(Duration.minutes(15)),
+      targets: [new LambdaFunction(canaryFunction)],
+    });
   }
 }

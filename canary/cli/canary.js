@@ -266,7 +266,7 @@ async function runTwoTurnCanary() {
         clearTimeout(responseTimeout);
         const totalTime = Date.now() - startTime;
         const turn1Time = turn1EndTime - turn1StartTime;
-        const turn2Time = turn2EndTime - turn2StartTime;
+        const turn2Time = turn2EndTime && turn2StartTime ? turn2EndTime - turn2StartTime : 0;
 
         // Finalize transcript
         transcript.turns = [
@@ -275,14 +275,16 @@ async function runTwoTurnCanary() {
             userInput: turn1UserInput,
             assistantResponse: turn1AssistantResponse,
             timestamp: new Date(turn1StartTime).toISOString()
-          },
-          {
+          }
+        ];
+        if (turn2StartTime) {
+          transcript.turns.push({
             turn: 2,
             userInput: turn2UserInput,
             assistantResponse: turn2AssistantResponse,
             timestamp: new Date(turn2StartTime).toISOString()
-          }
-        ];
+          });
+        }
         
         transcript.usage_summary.delta_sum_calculated = {
           total_input_tokens: {

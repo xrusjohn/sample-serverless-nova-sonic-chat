@@ -551,15 +551,22 @@ async function runTwoTurnCanary() {
               }
             }
 
-            if (event.event === 'textStop' && conversationState === 'turn2_sent' && turn2EndTime === undefined) {
-              turn2EndTime = Date.now();
-              console.log(`[textStop] turn2UserInput so far: "${turn2UserInput}"`);
-              transcript.events.push({
-                type: 'text_stop',
-                timestamp: new Date().toISOString(),
-                stop_reason: event.data?.stopReason
-              });
-              setTimeout(finishTest, 3000);
+            if (event.event === 'textStop') {
+              if (conversationState === 'turn1_audio_complete' && event.data?.role === 'assistant') {
+                turn2StartTime = Date.now();
+                turn2InputAudioChunks = [...audioChunks2];
+                conversationState = 'turn2_sent';
+                await sendAudio(channel, audioChunks2, 'turn 2', 0);
+              } else if (conversationState === 'turn2_sent' && turn2EndTime === undefined) {
+                turn2EndTime = Date.now();
+                console.log(`[textStop] turn2UserInput so far: "${turn2UserInput}"`);
+                transcript.events.push({
+                  type: 'text_stop',
+                  timestamp: new Date().toISOString(),
+                  stop_reason: event.data?.stopReason
+                });
+                setTimeout(finishTest, 3000);
+              }
             }
 
             if (event.event === 'end') {

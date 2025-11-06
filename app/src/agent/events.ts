@@ -168,7 +168,7 @@ export const processResponseStream = async (
           await enqueueAudioOutput(channel, jsonResponse.event.audioOutput.content);
         } else if (jsonResponse.event?.contentEnd && jsonResponse.event?.contentEnd?.type === 'AUDIO') {
           await forcePublishAudioOutput(channel);
-          await new Promise(resolve => setTimeout(resolve, 500));
+          stream.restartAudioInput();
           await dispatchEvent(channel, {
             event: 'audioStop',
             data: {},
@@ -213,6 +213,10 @@ export const processResponseStream = async (
         } else if (jsonResponse.event?.contentEnd && jsonResponse.event?.contentEnd?.type === 'TEXT') {
           const existingContent = contents[jsonResponse.event?.contentEnd?.contentId as string];
 
+          if (existingContent?.role === 'assistant' && existingContent?.isFinal) {
+            await forcePublishAudioOutput(channel);
+          }
+
           await dispatchEvent(channel, {
             event: 'textStop',
             data: {
@@ -232,18 +236,13 @@ export const processResponseStream = async (
               });
               console.log('Message saved to DynamoDB');
 
-              if (existingContent.role == 'assistant') {
-                // Event when Nova finishes speaking - end the stream here
-                if (jsonResponse.event?.contentEnd?.stopReason == 'END_TURN') {
-                  // Each conversation session is limited to 10 minutes
-                  if (Date.now() - invokedAt > 1000 * 60 * 10) {
-                    return { state: 'success' };
-                  }
-                  // Nova Sonic's single stream is limited to 8 minutes
-                  if (Date.now() - startedAt > 1000 * willResumeIn) {
-                    return { state: 'resume' };
-                  }
-                }
+              // Each conversation session is limited to 10 minutes
+              if (Date.now() - invokedAt > 1000 * 60 * 10) {
+                return { state: 'success' };
+              }
+              // Nova Sonic's single stream is limited to 8 minutes
+              if (Date.now() - startedAt > 1000 * willResumeIn) {
+                return { state: 'resume' };
               }
             }
           } catch (error) {

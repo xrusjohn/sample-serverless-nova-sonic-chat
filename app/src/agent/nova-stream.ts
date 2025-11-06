@@ -455,9 +455,11 @@ export class NovaStream {
 
   public enqueueAudioInput(audioInputBase64Array: string[]) {
     if (!this.isAudioStarted || !this.isActive) {
+      console.log(`⚠️  enqueueAudioInput ignored: isAudioStarted=${this.isAudioStarted}, isActive=${this.isActive}`);
       return;
     }
 
+    console.log(`📥 Enqueuing ${audioInputBase64Array.length} audio chunks`);
     for (const audioInput of audioInputBase64Array) {
       this.audioInputQueue.push(audioInput);
     }
@@ -477,6 +479,7 @@ export class NovaStream {
   private async processAudioQueue() {
     while (this.audioInputQueue.length > 0 && this.isAudioStarted && this.isActive) {
       const audioChunk = this.audioInputQueue.shift();
+      console.log(`Processing audio chunk, queue remaining: ${this.audioInputQueue.length}`);
 
       this.eventQueue.push({
         event: {
@@ -564,5 +567,19 @@ export class NovaStream {
     const res = await this.executeTool(toolName, input);
     this.enqueueToolResult(toolUseId, res);
     return res;
+  }
+
+  public restartAudioInput() {
+    const promptName = this.promptName;
+    const oldAudioContentId = this.audioContentId;
+    this.eventQueue.push({
+      event: {
+        contentEnd: {
+          promptName,
+          contentName: oldAudioContentId,
+        },
+      },
+    });
+    this.enqueueAudioStart();
   }
 }

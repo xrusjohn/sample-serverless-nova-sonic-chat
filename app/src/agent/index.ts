@@ -52,21 +52,14 @@ ${voiceConfig.additionalPrompt}
     // "Subscription has not been initialized"
     await new Promise((s) => setTimeout(s, 1000));
 
-    // Start response stream
-    while (true) {
-      console.log('starting/resuming a session');
-      const chatHistory = await messageRepository.getMessages(sessionId);
-      const stream = new NovaStream(sessionId, voiceId, system, tools, mcpTools);
-      context.stream = stream;
-      await stream.open(chatHistory);
-      const res = await processResponseStream(channel, stream, sessionId, startedAt);
-      stream.close();
-      if (res.state == 'success') {
-        console.log(`session finished with state ${res.state}`);
-        break;
-      }
-      // resume the session in the next loop
-    }
+    // Start response stream - keep it open for entire session
+    const chatHistory = await messageRepository.getMessages(sessionId);
+    const stream = new NovaStream(sessionId, voiceId, system, tools, mcpTools);
+    context.stream = stream;
+    await stream.open(chatHistory);
+    const res = await processResponseStream(channel, stream, sessionId, startedAt);
+    stream.close();
+    console.log(`session finished with state ${res.state}`);
   } catch (e) {
     console.error('Error in main process', e);
     const error = e as any;

@@ -4,7 +4,7 @@ function base64ToBuffer(base64) {
   return Buffer.from(base64, 'base64');
 }
 
-function saveAudioToWav(audioChunks, outputPath, sampleRate = 16000) {
+function saveAudioToWav(audioChunks, outputPath, sampleRate = 24000) {
   // Combine all base64 chunks into one buffer
   const buffers = audioChunks.map(chunk => base64ToBuffer(chunk));
   const audioData = Buffer.concat(buffers);

@@ -69,7 +69,7 @@ const arrayBufferToBase64 = (buffer) => {
 function loadAudioChunks(filePath) {
   const buffer = fs.readFileSync(filePath);
   const base64Audio = arrayBufferToBase64(buffer);
-  const chunkSize = 512;
+  const chunkSize = 4096;
   const chunks = [];
   for (let i = 0; i < base64Audio.length; i += chunkSize) {
     chunks.push(base64Audio.slice(i, i + chunkSize));
@@ -77,7 +77,8 @@ function loadAudioChunks(filePath) {
   return chunks;
 }
 
-function calculateAudioDuration(base64Audio, sampleRate = 16000) {
+function calculateAudioDuration(base64Audio, sampleRate) {
+  if (!sampleRate) return 0; // Unknown sample rate
   const binaryString = Buffer.from(base64Audio, 'base64').toString('binary');
   const bytes = binaryString.length;
   const numSamples = bytes / 2;
@@ -331,7 +332,7 @@ async function runTwoTurnCanary() {
         
         if (turn1InputAudioChunks.length > 0) {
           try {
-            saveAudioToWav(turn1InputAudioChunks, path.join(recordingDir, 'turn1-input.wav'));
+            saveAudioToWav(turn1InputAudioChunks, path.join(recordingDir, 'turn1-input.wav'), 16000);
             console.log(`\n💾 Turn 1 input audio saved (${turn1InputAudioChunks.length} chunks)`);
           } catch (err) {
             console.error(`❌ Failed to save turn1-input.wav: ${err.message}`);
@@ -341,7 +342,7 @@ async function runTwoTurnCanary() {
         }
         if (turn1AudioChunks.length > 0) {
           try {
-            saveAudioToWav(turn1AudioChunks, path.join(recordingDir, 'turn1-output.wav'));
+            saveAudioToWav(turn1AudioChunks, path.join(recordingDir, 'turn1-output.wav'), 24000);
             console.log(`💾 Turn 1 output audio saved (${turn1AudioChunks.length} chunks)`);
           } catch (err) {
             console.error(`❌ Failed to save turn1-output.wav: ${err.message}`);
@@ -351,7 +352,7 @@ async function runTwoTurnCanary() {
         }
         if (turn2InputAudioChunks.length > 0) {
           try {
-            saveAudioToWav(turn2InputAudioChunks, path.join(recordingDir, 'turn2-input.wav'));
+            saveAudioToWav(turn2InputAudioChunks, path.join(recordingDir, 'turn2-input.wav'), 16000);
             console.log(`💾 Turn 2 input audio saved (${turn2InputAudioChunks.length} chunks)`);
           } catch (err) {
             console.error(`❌ Failed to save turn2-input.wav: ${err.message}`);
@@ -361,7 +362,7 @@ async function runTwoTurnCanary() {
         }
         if (turn2AudioChunks.length > 0) {
           try {
-            saveAudioToWav(turn2AudioChunks, path.join(recordingDir, 'turn2-output.wav'));
+            saveAudioToWav(turn2AudioChunks, path.join(recordingDir, 'turn2-output.wav'), 24000);
             console.log(`💾 Turn 2 output audio saved (${turn2AudioChunks.length} chunks)`);
           } catch (err) {
             console.error(`❌ Failed to save turn2-output.wav: ${err.message}`);
@@ -413,8 +414,13 @@ async function runTwoTurnCanary() {
           try {
             const event = data.event;
 
-            // Record all events (skip blobs for audioInput and audioOutput)
-            if (event.event === 'audioInput' || event.event === 'audioOutput') {
+            // Log all events for debugging
+            if (!['audioInput'].includes(event.event)) {
+              console.log(`[EVENT] ${event.event}`);
+            }
+
+            // Record all events (skip blobs for audioInput)
+            if (event.event === 'audioInput') {
               return;
             }
             recordingEvents.push({
@@ -422,10 +428,6 @@ async function runTwoTurnCanary() {
               event: event.event,
               data: event.data
             });
-
-            if (event.event === 'audioInput') {
-              return;
-            }
 
             if (event.event === 'ready' && conversationState === 'starting') {
               conversationState = 'turn1_sent';
@@ -500,10 +502,11 @@ async function runTwoTurnCanary() {
 
             if (event.event === 'audioOutput') {
               let totalBytes = 0;
+              const outputSampleRate = event.data?.sampleRate || 24000; // Output is typically 24kHz
               for (const blob of event.data.blobs) {
                 const bytes = Buffer.from(blob, 'base64').length;
                 totalBytes += bytes;
-                const duration = calculateAudioDuration(blob);
+                const duration = calculateAudioDuration(blob, outputSampleRate);
                 if (conversationState === 'turn1_sent') {
                   turn1AudioDuration += duration;
                   turn1AudioChunks.push(blob);
@@ -519,15 +522,6 @@ async function runTwoTurnCanary() {
                 total_bytes: totalBytes,
                 duration_ms: conversationState === 'turn1_sent' ? turn1AudioDuration : turn2AudioDuration
               });
-              recordingEvents.push({
-                direction: event.direction,
-                event: event.event,
-                data: {
-                  chunk_count: event.data.blobs?.length || 0,
-                  total_bytes: totalBytes,
-                  duration_ms: conversationState === 'turn1_sent' ? turn1AudioDuration : turn2AudioDuration
-                }
-              });
               return;
             }
 
@@ -537,30 +531,14 @@ async function runTwoTurnCanary() {
                 console.log(`\n✓ Turn 1 audio complete (${turn1AudioDuration.toFixed(0)}ms)`);
                 clearTimeout(responseTimeout);
                 conversationState = 'turn1_audio_complete';
-                turn2StartTime = Date.now();
-
-                // Send silence continuously while waiting for agent response
-                let silenceSeq = 1;
-                const silenceChunks = loadAudioChunks(path.join(__dirname, '../audio/silence_1s.wav'));
-                const silenceInterval = setInterval(() => {
-                  channel.publish({
-                    direction: 'ctob',
-                    event: 'audioInput',
-                    data: { blobs: silenceChunks, sequence: silenceSeq++ }
-                  });
-                }, 1000);
-                
-                // Wait 2 seconds then send turn 2 audio
-                setTimeout(async () => {
-                  clearInterval(silenceInterval);
-                  turn2InputAudioChunks = [...audioChunks2];
-                  conversationState = 'turn2_sent';
-                  await sendAudio(channel, audioChunks2, 'turn 2', silenceSeq);
-                }, 2000);
-                
                 responseTimeout = setTimeout(() => {
-                  reject(new Error('Canary test timeout - no response after 30 seconds'));
-                }, 30000);
+                  reject(new Error('Canary test timeout - no response after 60 seconds'));
+                }, 60000);
+              } else if (conversationState === 'turn1_audio_complete') {
+                turn2StartTime = Date.now();
+                turn2InputAudioChunks = [...audioChunks2];
+                conversationState = 'turn2_sent';
+                await sendAudio(channel, audioChunks2, 'turn 2', 0);
               } else if (conversationState === 'turn2_sent') {
                 turn2EndTime = Date.now();
                 console.log(`\n✓ Turn 2 audio complete (${turn2AudioDuration.toFixed(0)}ms)`);

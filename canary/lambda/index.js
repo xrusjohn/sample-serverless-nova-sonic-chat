@@ -49,7 +49,8 @@ console.log = function(...args) {
 };
 
 // Audio utilities
-function calculateAudioDuration(base64Audio, sampleRate = 16000) {
+function calculateAudioDuration(base64Audio, sampleRate) {
+  if (!sampleRate) return 0; // Unknown sample rate
   const binaryString = Buffer.from(base64Audio, 'base64').toString('binary');
   const bytes = binaryString.length;
   const numSamples = bytes / 2;
@@ -57,9 +58,8 @@ function calculateAudioDuration(base64Audio, sampleRate = 16000) {
   return durationMs;
 }
 
-function saveAudioToWav(base64Chunks, filename) {
+function saveAudioToWav(base64Chunks, filename, sampleRate = 24000) {
   const audioData = Buffer.concat(base64Chunks.map(chunk => Buffer.from(chunk, 'base64')));
-  const sampleRate = 16000;
   const channels = 1;
   const bitsPerSample = 16;
   const byteRate = sampleRate * channels * (bitsPerSample / 8);
@@ -403,10 +403,10 @@ async function runTwoTurnCanaryTest(testId) {
                 fs.mkdirSync(recordingDir, { recursive: true });
               }
               if (turn1AudioChunks.length > 0) {
-                saveAudioToWav(turn1AudioChunks, `${recordingDir}/turn1-audio.wav`);
+                saveAudioToWav(turn1AudioChunks, `${recordingDir}/turn1-audio.wav`, 24000);
               }
               if (turn2AudioChunks.length > 0) {
-                saveAudioToWav(turn2AudioChunks, `${recordingDir}/turn2-audio.wav`);
+                saveAudioToWav(turn2AudioChunks, `${recordingDir}/turn2-audio.wav`, 24000);
               }
               
               resolve({

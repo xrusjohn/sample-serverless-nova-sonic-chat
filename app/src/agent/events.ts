@@ -245,8 +245,12 @@ export const processResponseStream = async (
             console.error('Failed to save message to DynamoDB:', error);
           }
         } else if (jsonResponse.event?.toolUse) {
-          // await dispatchEvent(sessionId, 'toolUse', jsonResponse.event.toolUse);
-          // // Store tool use information for later
+          console.log('🔧 Tool use request:', JSON.stringify({
+            toolUseId: jsonResponse.event.toolUse.toolUseId,
+            toolName: jsonResponse.event.toolUse.toolName,
+            content: jsonResponse.event.toolUse.content,
+            contentId: jsonResponse.event.toolUse.contentId
+          }));
           toolUses[jsonResponse.event.toolUse.contentId] = {
             toolUseId: jsonResponse.event.toolUse.toolUseId,
             toolName: jsonResponse.event.toolUse.toolName,
@@ -254,16 +258,32 @@ export const processResponseStream = async (
           };
         } else if (jsonResponse.event?.contentEnd && jsonResponse.event?.contentEnd?.type === 'TOOL') {
           const toolUse = toolUses[jsonResponse.event.contentEnd.contentId];
-          const result = await stream.executeToolAndSendResult(toolUse.toolUseId, toolUse.toolName, toolUse.content);
+          console.log('🔧 Executing tool:', JSON.stringify({ toolName: toolUse.toolName, input: toolUse.content }));
+          try {
+            const result = await stream.executeToolAndSendResult(toolUse.toolUseId, toolUse.toolName, toolUse.content);
+            console.log('✅ Tool execution result:', JSON.stringify({ toolName: toolUse.toolName, result: result?.substring(0, 200) + '...' }));
+          } catch (toolError) {
+            console.error('❌ Tool execution failed:', JSON.stringify({ toolName: toolUse.toolName, error: toolError.message }));
+            throw toolError;
+          }
         }
       }
     } catch (e) {
       console.error('Error in processResponseStream', e);
 
       if (e instanceof ModelStreamErrorException) {
-        console.log('Retrying...');
+        const error = e as any;
+        const errorDetails = {
+          name: error.name || 'ModelStreamErrorException',
+          message: error.message || 'Stream processing error',
+          fault: error.$fault,
+          statusCode: error.$metadata?.httpStatusCode,
+          requestId: error.$metadata?.requestId
+        };
+        console.error('ModelStreamErrorException details:', JSON.stringify(errorDetails));
+        throw new Error(`${errorDetails.name}: ${errorDetails.message} (Status: ${errorDetails.statusCode || 'unknown'})`);
       } else {
-        return { state: 'error' };
+        throw e;
       }
     }
   }

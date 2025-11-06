@@ -69,7 +69,10 @@ ${voiceConfig.additionalPrompt}
     }
   } catch (e) {
     console.error('Error in main process', e);
-    endReason = (e as any).message ?? 'Internal Server Error';
+    const error = e as any;
+    const errorType = error.name || error.constructor?.name || 'Unknown';
+    const errorMessage = error.message || 'Internal Server Error';
+    endReason = `${errorType}: ${errorMessage}`;
   } finally {
     try {
       if (channel) {

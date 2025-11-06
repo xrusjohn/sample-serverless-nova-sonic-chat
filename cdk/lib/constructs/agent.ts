@@ -28,17 +28,26 @@ export class Agent extends Construct {
           .toString()
           .split('\n'),
         cmd: ['agent.handler'],
-        platform: Platform.LINUX_ARM64,
+        platform: Platform.LINUX_AMD64,
       }),
       memorySize: 512,
       ephemeralStorageSize: Size.mebibytes(512),
       timeout: Duration.minutes(15),
-      architecture: Architecture.ARM_64,
+      architecture: Architecture.X86_64,
       environment: {
         TABLE_NAME: table.tableName,
         EVENT_API_ENDPOINT: eventBus.httpEndpoint,
         EVENT_BUS_NAMESPACE: eventBus.defaultChannelName,
         BEDROCK_REGION: bedrockRegion,
+        OTEL_PROPAGATORS: 'tracecontext,baggage,xray',
+        OTEL_TRACES_EXPORTER: 'otlp',
+        OTEL_METRICS_EXPORTER: 'none',
+        OTEL_LOGS_EXPORTER: 'none',
+        OTEL_EXPORTER_OTLP_PROTOCOL: 'http/protobuf',
+        OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: 'https://xray.us-east-1.amazonaws.com/v1/traces',
+        OTEL_RESOURCE_ATTRIBUTES: 'service.name=nova-sonic-agent,service.namespace=sonic-chat-app',
+        OTEL_AWS_APPLICATION_SIGNALS_ENABLED: 'true',
+        OTEL_TRACES_SAMPLER: 'xray',
       },
     });
 
@@ -49,6 +58,21 @@ export class Agent extends Construct {
     handler.addToRolePolicy(
       new PolicyStatement({
         actions: ['bedrock:InvokeModel'],
+        resources: ['*'],
+      })
+    );
+
+    handler.addToRolePolicy(
+      new PolicyStatement({
+        actions: [
+          'cloudwatch:PutMetricData',
+          'logs:PutLogEvents',
+          'logs:CreateLogGroup',
+          'logs:CreateLogStream',
+          'xray:PutTraceSegments',
+          'xray:PutTelemetryRecords',
+          'application-signals:PutMetricData',
+        ],
         resources: ['*'],
       })
     );

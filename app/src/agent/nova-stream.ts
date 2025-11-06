@@ -282,17 +282,17 @@ export class NovaStream {
             channelCount: 1,
             voiceId,
           },
-          ...(this.tools.length > 0
+          ...((this.tools?.length || 0) > 0 || (this.mcpTools?.length || 0) > 0
             ? {
                 toolUseOutputConfiguration: {
                   mediaType: 'application/json',
                 },
                 toolConfiguration: {
                   tools: [
-                    ...this.tools.map((tool) => ({
+                    ...(this.tools || []).map((tool) => ({
                       toolSpec: tool.toolSpec(),
                     })),
-                    ...this.mcpTools.map((tool) => ({ toolSpec: tool.toolSpec! })),
+                    ...(this.mcpTools || []).map((tool) => ({ toolSpec: tool.toolSpec! })),
                   ],
                 },
               }
@@ -498,41 +498,65 @@ export class NovaStream {
   }
 
   private async executeTool(toolName: string, input: string) {
+    console.log(`🔧 Starting tool execution: ${toolName}`);
     try {
       JSON.parse(input);
     } catch (e) {
-      return `Input must be valid JSON: ${input}`;
+      const errorMsg = `Input must be valid JSON: ${input}`;
+      console.error(`❌ Tool ${toolName} JSON parse error:`, errorMsg);
+      return errorMsg;
     }
 
     const mcpResult = await tryExecuteMcpTool(this.sessionId, toolName, JSON.parse(input));
     if (mcpResult.found) {
-      console.log(`Used MCP tool: ${toolName} ${input}`);
+      console.log(`✅ Used MCP tool: ${toolName} with input: ${input.substring(0, 100)}...`);
       if (typeof mcpResult.content == 'string') {
-        return JSON.stringify({ result: mcpResult.content });
+        const result = JSON.stringify({ result: mcpResult.content });
+        console.log(`✅ MCP tool ${toolName} result: ${result.substring(0, 200)}...`);
+        return result;
       } else if (Array.isArray(mcpResult.content)) {
-        return JSON.stringify({
+        const result = JSON.stringify({
           result: mcpResult.content
             .filter((c) => c.type == 'text')
             .map((c) => c.text)
             .join('\n\n'),
         });
+        console.log(`✅ MCP tool ${toolName} array result: ${result.substring(0, 200)}...`);
+        return result;
       }
-      throw new Error('Unexpected MCP result');
+      const error = new Error('Unexpected MCP result');
+      console.error(`❌ MCP tool ${toolName} unexpected result:`, mcpResult.content);
+      throw error;
     }
 
-    const tool = this.tools.find((tool) => tool.name == toolName);
-    if (!tool) return `Cannot find tool ${toolName}`;
+    const tool = this.tools?.find((tool) => tool.name == toolName);
+    if (!tool) {
+      const errorMsg = `Cannot find tool ${toolName}`;
+      console.error(`❌ Tool not found:`, errorMsg);
+      return errorMsg;
+    }
     const { data: parsedInput, error } = tool.schema.safeParse(JSON.parse(input));
-    if (error) `Input validation error: ${JSON.stringify(error)}`;
+    if (error) {
+      const errorMsg = `Input validation error: ${JSON.stringify(error)}`;
+      console.error(`❌ Tool ${toolName} validation error:`, errorMsg);
+      return errorMsg;
+    }
     try {
+      console.log(`🔧 Executing built-in tool: ${toolName}`);
       const result = await tool.handler(parsedInput, {});
       if (typeof result == 'string') {
-        return JSON.stringify({ result });
+        const jsonResult = JSON.stringify({ result });
+        console.log(`✅ Built-in tool ${toolName} result: ${jsonResult.substring(0, 200)}...`);
+        return jsonResult;
       } else {
-        return JSON.stringify(result);
+        const jsonResult = JSON.stringify(result);
+        console.log(`✅ Built-in tool ${toolName} object result: ${jsonResult.substring(0, 200)}...`);
+        return jsonResult;
       }
     } catch (e) {
-      return `Error executing tool ${toolName}: ${e}`;
+      const errorMsg = `Error executing tool ${toolName}: ${e}`;
+      console.error(`❌ Tool ${toolName} execution error:`, errorMsg);
+      return errorMsg;
     }
   }
 

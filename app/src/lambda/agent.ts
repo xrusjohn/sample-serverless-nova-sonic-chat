@@ -1,7 +1,10 @@
+require('./adot-instrument');
+
 import { mcpConfigSchema } from '@/common/schemas';
 import { main } from '../agent';
 import { Handler } from 'aws-lambda';
 import z from 'zod';
+import { trace } from '@opentelemetry/api';
 
 const eventSchema = z.object({
   sessionId: z.string(),
@@ -12,7 +15,30 @@ const eventSchema = z.object({
 });
 
 export const handler: Handler<z.infer<typeof eventSchema>> = async (event, context) => {
-  console.log(JSON.stringify(event));
-  const { sessionId, userId, systemPrompt, voiceId, mcpConfig } = eventSchema.parse(event);
-  await main(sessionId, userId, systemPrompt, voiceId, mcpConfig);
+  const tracer = trace.getTracer('nova-sonic-agent', '1.0.0');
+  
+  return tracer.startActiveSpan('nova-sonic-session', async (span) => {
+    try {
+      console.log(JSON.stringify(event));
+      const { sessionId, userId, systemPrompt, voiceId, mcpConfig } = eventSchema.parse(event);
+      
+      span.setAttributes({
+        'nova.session_id': sessionId,
+        'nova.user_id': userId,
+        'nova.voice_id': voiceId,
+        'service.name': 'nova-sonic-agent',
+        'service.namespace': 'sonic-chat-app',
+      });
+      
+      await main(sessionId, userId, systemPrompt, voiceId, mcpConfig);
+      
+      span.setStatus({ code: 1 }); // OK
+    } catch (error) {
+      span.recordException(error as Error);
+      span.setStatus({ code: 2, message: (error as Error).message }); // ERROR
+      throw error;
+    } finally {
+      span.end();
+    }
+  });
 };

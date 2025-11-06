@@ -1,0 +1,79 @@
+{
+  "mcpServers": {
+    "AWS Cloud Control API MCP Server": {
+      "command": "uvx",
+      "args": [
+        "awslabs.ccapi-mcp-server@latest"
+      ],
+      "env": {
+        "AWS_PROFILE": "workshop",
+        "AWS_REGION": "us-east-1",
+        "FASTMCP_LOG_LEVEL": "ERROR"
+      },
+      "disabled": false,
+      "autoApprove": [],
+      "type": "stdio"
+    },
+    "strands-agents": {
+      "command": "uvx",
+      "args": [
+        "strands-agents-mcp-server"
+      ],
+      "env": {
+        "FASTMCP_LOG_LEVEL": "ERROR"
+      },
+      "disabled": false,
+      "autoApprove": [
+        "search_docs",
+        "fetch_doc"
+      ]
+    },
+    "awslabs_cdk-mcp-server": {
+      "command": "uvx",
+      "args": [
+        "awslabs.cdk-mcp-server@latest"
+      ],
+      "env": {
+        "FASTMCP_LOG_LEVEL": "ERROR"
+      },
+      "disabled": true,
+      "autoApprove": [
+        "cdk_CDKGeneralGuidance",
+        "cdk_SearchGenAICDKConstructs"
+      ]
+    },
+    "bedrock-agentcore-mcp-server": {
+      "command": "uvx",
+      "args": [
+        "awslabs.amazon-bedrock-agentcore-mcp-server@latest"
+      ],
+      "env": {
+        "FASTMCP_LOG_LEVEL": "ERROR"
+      },
+      "disabled": false,
+      "autoApprove": [
+        "search_agentcore_docs",
+        "fetch_agentcore_doc"
+      ]
+    },
+    "awslabs_aws-api-mcp-server": {
+      "command": "uvx",
+      "args": [
+        "awslabs.aws-api-mcp-server@latest"
+      ],
+      "env": {
+        "FASTMCP_LOG_LEVEL": "ERROR"
+      },
+      "disabled": true,
+      "autoApprove": [
+        "call_aws",
+        "suggest_aws_commands"
+      ]
+    },
+    "aws-knowledge": {
+      "type": "http",
+      "url": "https://knowledge-mcp.global.api.aws",
+      "disabled": true
+    }
+  }
+}

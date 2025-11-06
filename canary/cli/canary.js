@@ -416,9 +416,11 @@ async function runTwoTurnCanary() {
           try {
             const event = data.event;
 
-            // Log all events for debugging
+            // Log all events for debugging with state and role
             if (!['audioInput'].includes(event.event)) {
-              console.log(`[EVENT] ${event.event}`);
+              const role = event.data?.role ? ` role=${event.data.role}` : '';
+              const reason = event.data?.stopReason ? ` ${event.data.stopReason}` : '';
+              console.log(`[EVENT] ${event.event}${role}${reason} [state=${conversationState}]`);
             }
 
             // Record all events (skip blobs for audioInput)

@@ -198,9 +198,11 @@ async function runTwoTurnCanaryTest(testId) {
       output: { speechTokens: 0, textTokens: 0 }
     };
     
-    // Load test audio files (recorded from working app)
-    const turn1Audio = await loadTestAudio('test-audio.raw');
-    const turn2Audio = await loadTestAudio('test-audio.raw'); // Use same file for both turns
+    // Load test audio files from environment variables or defaults
+    const turn1AudioFile = process.env.TURN1_AUDIO_FILE || 'good_morning_nova.wav';
+    const turn2AudioFile = process.env.TURN2_AUDIO_FILE || 'good_morning_nova.wav';
+    const turn1Audio = await loadTestAudio(turn1AudioFile);
+    const turn2Audio = await loadTestAudio(turn2AudioFile);
     
     // Connect to AppSync Events
     const channelPath = `/${EVENT_BUS_NAMESPACE}/user/${userId}/${sessionId}`;

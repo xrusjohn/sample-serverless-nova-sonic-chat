@@ -55,6 +55,8 @@ export class Canary extends Construct {
         BEDROCK_REGION: bedrockRegion,
         AGENT_HANDLER_FUNCTION_NAME: agentHandler.functionName,
         TABLE_NAME: tableName,
+        TURN1_AUDIO_FILE: 'good_morning_nova.wav',
+        TURN2_AUDIO_FILE: 'good_morning_nova.wav',
       },
     });
 

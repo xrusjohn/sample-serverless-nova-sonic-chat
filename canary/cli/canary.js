@@ -102,12 +102,19 @@ async function publishMetrics(metricName, value, testId) {
             }
           ],
           Timestamp: new Date()
+        },
+        {
+          MetricName: metricName,
+          Value: value,
+          Unit: metricName.includes('Time') ? 'Milliseconds' : 'Count',
+          Timestamp: new Date()
         }
       ]
     });
     await cloudwatch.send(command);
+    console.log(`✓ Published ${metricName}=${value}`);
   } catch (error) {
-    console.error('Error publishing metrics:', error);
+    console.error(`❌ Error publishing ${metricName}:`, error.message);
   }
 }
 
@@ -264,8 +271,9 @@ async function runTwoTurnCanary() {
         }
       };
 
-      const finishTest = async () => {
+      const finishTest = () => {
         clearTimeout(responseTimeout);
+        clearTimeout(agentIdleTimeout);
         const totalTime = Date.now() - startTime;
         const turn1Time = turn1EndTime - turn1StartTime;
         const turn2Time = turn2EndTime && turn2StartTime ? turn2EndTime - turn2StartTime : 0;
@@ -386,30 +394,24 @@ async function runTwoTurnCanary() {
         console.log(`💾 Transcript saved`);
         console.log(`📁 Recording directory: ${recordingDir}`);
         
-        // Publish metrics
-        await publishMetrics('CanarySuccess', 1, testId);
-        await publishMetrics('CanaryTotalTime', totalTime, testId);
-        await publishMetrics('CanaryTurn1Time', turn1Time, testId);
-        await publishMetrics('CanaryTurn2Time', turn2Time, testId);
-        await publishMetrics('CanaryTotalTokens', transcript.usage_summary.delta_sum_calculated.total_tokens, testId);
+        // Send terminateSession to gracefully close Bedrock connection
+        console.log(`\n🔚 Sending terminateSession event...`);
+        channel.publish({ direction: 'ctob', event: 'terminateSession', data: {} });
         
-        // Save transcript locally and to S3
-        await saveTranscriptToS3(testId, transcript);
-        if (process.env.AUDIO_BUCKET) {
-          await saveRecordingsToS3(testId, recordingDir);
-        }
-
         resolve({
           success: true,
           testId,
+          startTime,
           totalTime,
           turn1Time,
           turn2Time,
+          turn1StartTime,
           turn1UserInput,
           turn1AssistantResponse,
           turn2UserInput,
           turn2AssistantResponse,
-          transcript
+          transcript,
+          recordingDir
         });
       };
 
@@ -562,16 +564,6 @@ async function runTwoTurnCanary() {
                 timestamp: new Date().toISOString(),
                 stop_reason: event.data?.stopReason
               });
-              
-              if (conversationState === 'turn2_sent' && turn2AssistantResponse.length > 0) {
-                turn2EndTime = Date.now();
-                setTimeout(() => finishTest(), 3000);
-              }
-            }
-
-            if (event.event === 'end') {
-              turn2EndTime = Date.now();
-              finishTest();
             }
           } catch (error) {
             console.error('Error processing event:', error);
@@ -595,15 +587,37 @@ async function runTwoTurnCanary() {
 }
 
 runTwoTurnCanary().then(async result => {
-  console.log(`\n${result.success ? '✅ PASS' : '❌ FAIL'}`);
-  if (result.success) {
-    await publishMetrics('CanarySuccess', 1, result.testId);
-  } else {
+  if (!result.success) {
+    console.log(`\n❌ FAIL`);
     await publishMetrics('CanarySuccess', 0, result.testId);
+    await publishMetrics('CanaryFailure', 1, result.testId);
+    process.exit(1);
   }
-  process.exit(result.success ? 0 : 1);
+
+  // Publish metrics
+  await publishMetrics('CanarySuccess', 1, result.testId);
+  await publishMetrics('CanaryTotalTime', result.totalTime, result.testId);
+  await publishMetrics('CanaryTurn1Time', result.turn1Time, result.testId);
+  await publishMetrics('CanaryTurn2Time', result.turn2Time, result.testId);
+  await publishMetrics('CanaryTotalTokens', result.transcript.usage_summary.delta_sum_calculated.total_tokens, result.testId);
+  
+  const readyWaitTime = result.turn1StartTime - result.startTime;
+  await publishMetrics('CanaryAudioLoadTime', 0, result.testId);
+  await publishMetrics('CanaryChannelConnectTime', 0, result.testId);
+  await publishMetrics('CanaryAgentInvokeTime', 0, result.testId);
+  await publishMetrics('CanaryReadyWaitTime', readyWaitTime, result.testId);
+  
+  // Save to S3
+  await saveTranscriptToS3(result.testId, result.transcript);
+  if (process.env.AUDIO_BUCKET) {
+    await saveRecordingsToS3(result.testId, result.recordingDir);
+  }
+
+  console.log(`\n✅ PASS`);
+  process.exit(0);
 }).catch(async error => {
   console.error('Fatal error:', error);
   await publishMetrics('CanarySuccess', 0, 'unknown');
+  await publishMetrics('CanaryFailure', 1, 'unknown');
   process.exit(1);
 });

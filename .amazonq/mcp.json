@@ -73,7 +73,7 @@
     "aws-knowledge": {
       "type": "http",
       "url": "https://knowledge-mcp.global.api.aws",
-      "disabled": true
+      "disabled": false
     }
   }
 }

@@ -1,0 +1,10 @@
+{
+  "name": "sonic-canary-shared",
+  "version": "1.0.0",
+  "main": "canary-core.js",
+  "dependencies": {
+    "@aws-sdk/client-cloudwatch": "^3.0.0",
+    "@aws-sdk/client-s3": "^3.0.0",
+    "@aws-sdk/client-lambda": "^3.0.0"
+  }
+}

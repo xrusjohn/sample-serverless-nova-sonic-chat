@@ -95,7 +95,7 @@ export const initializeSubscription = async (channelPath: string, context: { str
       if (event.event === 'audioInput') {
         sequencer.next(event.data.blobs, event.data.sequence);
       } else if (event.event === 'terminateSession') {
-        stream.close();
+        stream.terminate();
       }
     }
     unprocessedClientEvents = [];

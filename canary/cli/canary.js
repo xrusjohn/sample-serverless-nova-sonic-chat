@@ -5,15 +5,10 @@ require('dotenv').config();
 const { events } = require('aws-amplify/data');
 const { Amplify } = require('aws-amplify');
 const { fromNodeProviderChain } = require('@aws-sdk/credential-providers');
-const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
-const { CloudWatchClient, PutMetricDataCommand } = require('@aws-sdk/client-cloudwatch');
 const { v4: uuidv4 } = require('uuid');
 const fs = require('fs');
 const path = require('path');
-const { saveAudioToWav } = require('./audio-utils');
-
-const s3 = new S3Client({});
-const cloudwatch = new CloudWatchClient({});
+const { publishMetrics, runTwoTurnCanary } = require('../shared/canary-core');
 
 // WebSocket polyfill
 const ws = require('ws');
@@ -22,15 +17,6 @@ ws.setMaxListeners(100);
 
 const NAMESPACE = process.env.EVENT_BUS_NAMESPACE || 'default';
 const EVENT_API_ENDPOINT = process.env.EVENT_API_ENDPOINT;
-
-// Filter audioOutput events from CloudWatch logs
-const originalLog = console.log;
-console.log = function(...args) {
-  const message = args.join(' ');
-  if (!message.includes('audioOutput')) {
-    originalLog.apply(console, args);
-  }
-};
 
 // Configure Amplify for AppSync Events with IAM auth
 Amplify.configure(
@@ -77,109 +63,10 @@ function loadAudioChunks(filePath) {
   return chunks;
 }
 
-function calculateAudioDuration(base64Audio, sampleRate) {
-  if (!sampleRate) return 0; // Unknown sample rate
-  const binaryString = Buffer.from(base64Audio, 'base64').toString('binary');
-  const bytes = binaryString.length;
-  const numSamples = bytes / 2;
-  const durationMs = (numSamples / sampleRate) * 1000;
-  return durationMs;
-}
-
-async function publishMetrics(metricName, value, testId) {
-  try {
-    const command = new PutMetricDataCommand({
-      Namespace: 'SonicCanary',
-      MetricData: [
-        {
-          MetricName: metricName,
-          Value: value,
-          Unit: metricName.includes('Time') ? 'Milliseconds' : 'Count',
-          Dimensions: [
-            {
-              Name: 'TestId',
-              Value: testId
-            }
-          ],
-          Timestamp: new Date()
-        },
-        {
-          MetricName: metricName,
-          Value: value,
-          Unit: metricName.includes('Time') ? 'Milliseconds' : 'Count',
-          Timestamp: new Date()
-        }
-      ]
-    });
-    await cloudwatch.send(command);
-    console.log(`✓ Published ${metricName}=${value}`);
-  } catch (error) {
-    console.error(`❌ Error publishing ${metricName}:`, error.message);
-  }
-}
-
-async function saveTranscriptToS3(testId, transcript) {
-  const bucket = process.env.TRANSCRIPT_BUCKET;
-  if (!bucket) {
-    console.log(`⚠️  TRANSCRIPT_BUCKET not set, S3 upload skipped`);
-    return;
-  }
-  
-  try {
-    const command = new PutObjectCommand({
-      Bucket: bucket,
-      Key: `transcripts/${testId}.json`,
-      Body: JSON.stringify(transcript, null, 2),
-      ContentType: 'application/json'
-    });
-    await s3.send(command);
-    console.log(`💾 Transcript saved to S3: s3://${bucket}/transcripts/${testId}.json`);
-  } catch (error) {
-    console.error('Error saving transcript to S3:', error);
-  }
-}
-
-async function saveRecordingsToS3(testId, recordingDir) {
-  try {
-    const bucket = process.env.AUDIO_BUCKET;
-    if (!bucket) return;
-    
-    const files = fs.readdirSync(recordingDir);
-    for (const file of files) {
-      const filePath = path.join(recordingDir, file);
-      const fileContent = fs.readFileSync(filePath);
-      const command = new PutObjectCommand({
-        Bucket: bucket,
-        Key: `recordings/${testId}/${file}`,
-        Body: fileContent,
-        ContentType: file.endsWith('.wav') ? 'audio/wav' : 'application/json'
-      });
-      await s3.send(command);
-    }
-    console.log(`💾 Recordings saved to S3`);
-  } catch (error) {
-    console.error('Error saving recordings to S3:', error);
-  }
-}
-
-async function sendAudio(channel, chunks, label, sequence) {
-  console.log(`📤 Sending ${label} audio (${chunks.length} chunks)`);
-  channel.publish({
-    direction: 'ctob',
-    event: 'audioInput',
-    data: { blobs: chunks, sequence }
-  });
-  console.log(` ✓`);
-}
-
-async function runTwoTurnCanary() {
+async function main() {
   const testId = uuidv4();
   const sessionId = uuidv4();
   const userId = 'canary-user';
-  const startTime = Date.now();
-  const recordingEvents = [];
-  const turn1AudioChunks = [];
-  const turn2AudioChunks = [];
 
   console.log(`\n🚀 Starting two-turn canary test: ${testId}`);
   console.log(`   Session: ${sessionId}`);
@@ -202,422 +89,47 @@ async function runTwoTurnCanary() {
     const audioChunks2 = loadAudioChunks(audioPath2);
     
     console.log(`✓ Loaded turn 1 audio: ${audioFile1} (${audioChunks1.length} chunks)`);
-    console.log(`✓ Loaded turn 2 audio: ${audioFile2} (${audioChunks2.length} chunks)`);
-
-    const channelPath = `/${NAMESPACE}/user/${userId}/${sessionId}`;
-    console.log(`\n📡 Connecting to AppSync Events: ${channelPath}`);
-    const channel = await events.connect(channelPath);
-    console.log(`✓ Connected to AppSync Events`);
-
-    console.log(`\n🤖 Starting Nova Sonic session...`);
-    const { LambdaClient, InvokeCommand } = require('@aws-sdk/client-lambda');
-    const lambda = new LambdaClient({});
+    console.log(`✓ Loaded turn 2 audio: ${audioFile2} (${audioChunks2.length} chunks)\n`);
 
     const agentFunctionName = process.env.AGENT_HANDLER_FUNCTION_NAME;
     if (!agentFunctionName) {
       throw new Error('AGENT_HANDLER_FUNCTION_NAME environment variable not set');
     }
 
-    const invokeCommand = new InvokeCommand({
-      FunctionName: agentFunctionName,
-      InvocationType: 'Event',
-      Payload: JSON.stringify({
-        sessionId,
-        userId,
-        systemPrompt: 'You are a helpful assistant. Please respond briefly.',
-        voiceId: 'tiffany',
-        mcpConfig: { mcpServers: {} }
-      })
-    });
-
-    const response = await lambda.send(invokeCommand);
-    if (response.StatusCode !== 202) {
-      throw new Error(`Failed to start session: ${response.StatusCode}`);
-    }
-    console.log(`✓ Nova Sonic session started`);
-
-    return new Promise((resolve, reject) => {
-      let conversationState = 'starting';
-      let turn1StartTime, turn1EndTime, turn2StartTime, turn2EndTime;
-      let turn1UserInput = '';
-      let turn1AssistantResponse = '';
-      let turn2UserInput = '';
-      let turn2AssistantResponse = '';
-      let responseTimeout;
-      let turn1InputAudioChunks = [];
-      let turn2InputAudioChunks = [];
-      let turn1AudioDuration = 0;
-      let turn2AudioDuration = 0;
-      let lastEventTime = Date.now();
-      let agentIdleTimeout;
-      let deltaTokenSum = {
-        input: { speechTokens: 0, textTokens: 0 },
-        output: { speechTokens: 0, textTokens: 0 }
-      };
-      let transcript = {
-        testId,
-        sessionId,
-        timestamp: new Date().toISOString(),
-        events: [],
-        turns: [],
-        usage_summary: {
-          delta_sum_calculated: {
-            total_input_tokens: { speechTokens: 0, textTokens: 0, sum: 0 },
-            total_output_tokens: { speechTokens: 0, textTokens: 0, sum: 0 },
-            total_tokens: 0
-          },
-          final_total: null,
-          cost_estimate: { input_cost: 0, output_cost: 0, total_cost: 0 }
-        }
-      };
-
-      const finishTest = () => {
-        clearTimeout(responseTimeout);
-        clearTimeout(agentIdleTimeout);
-        const totalTime = Date.now() - startTime;
-        const turn1Time = turn1EndTime - turn1StartTime;
-        const turn2Time = turn2EndTime && turn2StartTime ? turn2EndTime - turn2StartTime : 0;
-
-        // Finalize transcript
-        transcript.turns = [
-          {
-            turn: 1,
-            userInput: turn1UserInput,
-            assistantResponse: turn1AssistantResponse,
-            timestamp: new Date(turn1StartTime).toISOString()
-          }
-        ];
-        if (turn2StartTime) {
-          transcript.turns.push({
-            turn: 2,
-            userInput: turn2UserInput,
-            assistantResponse: turn2AssistantResponse,
-            timestamp: new Date(turn2StartTime).toISOString()
-          });
-        }
-        
-        transcript.usage_summary.delta_sum_calculated = {
-          total_input_tokens: {
-            speechTokens: deltaTokenSum.input.speechTokens,
-            textTokens: deltaTokenSum.input.textTokens,
-            sum: deltaTokenSum.input.speechTokens + deltaTokenSum.input.textTokens
-          },
-          total_output_tokens: {
-            speechTokens: deltaTokenSum.output.speechTokens,
-            textTokens: deltaTokenSum.output.textTokens,
-            sum: deltaTokenSum.output.speechTokens + deltaTokenSum.output.textTokens
-          },
-          total_tokens: deltaTokenSum.input.speechTokens + deltaTokenSum.input.textTokens + 
-                       deltaTokenSum.output.speechTokens + deltaTokenSum.output.textTokens
-        };
-        
-        const inputCost = (transcript.usage_summary.delta_sum_calculated.total_input_tokens.sum / 1000) * 0.0008;
-        const outputCost = (transcript.usage_summary.delta_sum_calculated.total_output_tokens.sum / 1000) * 0.0016;
-        transcript.usage_summary.cost_estimate = {
-          input_cost: inputCost,
-          output_cost: outputCost,
-          total_cost: inputCost + outputCost
-        };
-
-        console.log(`\n✓ Test completed`);
-        console.log(`\n📊 Results:`);
-        console.log(`   Total time: ${totalTime}ms`);
-        console.log(`   Turn 1 time: ${turn1Time}ms`);
-        console.log(`   Turn 2 time: ${turn2Time}ms`);
-        console.log(`   Turn 1 audio: ${turn1AudioDuration.toFixed(0)}ms`);
-        console.log(`   Turn 2 audio: ${turn2AudioDuration.toFixed(0)}ms`);
-        console.log(`   Tokens: ${transcript.usage_summary.delta_sum_calculated.total_tokens}`);
-        console.log(`   Est. cost: $${transcript.usage_summary.cost_estimate.total_cost.toFixed(4)}`);
-        console.log(`   Test ID: ${testId}`);
-        console.log(`\n📝 Transcripts:`);
-        console.log(`   Turn 1 input:  "${turn1UserInput}"`);
-        console.log(`   Turn 1 output: "${turn1AssistantResponse}"`);
-        console.log(`   Turn 2 input:  "${turn2UserInput}"`);
-        console.log(`   Turn 2 output: "${turn2AssistantResponse}"`);
-
-        // Save recordings locally with timestamp prefix
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-        const recordingDir = path.join(__dirname, `../recordings/${timestamp}-${testId}`);
-        if (!fs.existsSync(recordingDir)) {
-          fs.mkdirSync(recordingDir, { recursive: true });
-        }
-        
-        if (turn1InputAudioChunks.length > 0) {
-          try {
-            saveAudioToWav(turn1InputAudioChunks, path.join(recordingDir, 'turn1-input.wav'), 16000);
-            console.log(`\n💾 Turn 1 input audio saved (${turn1InputAudioChunks.length} chunks)`);
-          } catch (err) {
-            console.error(`❌ Failed to save turn1-input.wav: ${err.message}`);
-          }
-        } else {
-          console.log(`\n⚠️  Turn 1 input audio NOT captured (${turn1InputAudioChunks.length} chunks)`);
-        }
-        if (turn1AudioChunks.length > 0) {
-          try {
-            saveAudioToWav(turn1AudioChunks, path.join(recordingDir, 'turn1-output.wav'), 24000);
-            console.log(`💾 Turn 1 output audio saved (${turn1AudioChunks.length} chunks)`);
-          } catch (err) {
-            console.error(`❌ Failed to save turn1-output.wav: ${err.message}`);
-          }
-        } else {
-          console.log(`⚠️  Turn 1 output audio NOT captured (${turn1AudioChunks.length} chunks)`);
-        }
-        if (turn2InputAudioChunks.length > 0) {
-          try {
-            saveAudioToWav(turn2InputAudioChunks, path.join(recordingDir, 'turn2-input.wav'), 16000);
-            console.log(`💾 Turn 2 input audio saved (${turn2InputAudioChunks.length} chunks)`);
-          } catch (err) {
-            console.error(`❌ Failed to save turn2-input.wav: ${err.message}`);
-          }
-        } else {
-          console.log(`⚠️  Turn 2 input audio NOT captured (${turn2InputAudioChunks.length} chunks)`);
-        }
-        if (turn2AudioChunks.length > 0) {
-          try {
-            saveAudioToWav(turn2AudioChunks, path.join(recordingDir, 'turn2-output.wav'), 24000);
-            console.log(`💾 Turn 2 output audio saved (${turn2AudioChunks.length} chunks)`);
-          } catch (err) {
-            console.error(`❌ Failed to save turn2-output.wav: ${err.message}`);
-          }
-        } else {
-          console.log(`⚠️  Turn 2 output audio NOT captured (${turn2AudioChunks.length} chunks)`);
-        }
-        
-        fs.writeFileSync(path.join(recordingDir, 'events.json'), JSON.stringify({
-          testId,
-          sessionId,
-          timestamp: new Date().toISOString(),
-          events: recordingEvents
-        }, null, 2));
-        fs.writeFileSync(path.join(recordingDir, 'transcript.json'), JSON.stringify(transcript, null, 2));
-        console.log(`💾 Event log saved`);
-        console.log(`💾 Transcript saved`);
-        console.log(`📁 Recording directory: ${recordingDir}`);
-        
-        // Send terminateSession to gracefully close Bedrock connection
-        console.log(`\n🔚 Sending terminateSession event...`);
-        channel.publish({ direction: 'ctob', event: 'terminateSession', data: {} });
-        
-        resolve({
-          success: true,
-          testId,
-          startTime,
-          totalTime,
-          turn1Time,
-          turn2Time,
-          turn1StartTime,
-          turn1UserInput,
-          turn1AssistantResponse,
-          turn2UserInput,
-          turn2AssistantResponse,
-          transcript,
-          recordingDir
-        });
-      };
-
-      channel.subscribe({
-        next: async (data) => {
-          try {
-            const event = data.event;
-
-            // Log all events for debugging with state and role
-            if (!['audioInput'].includes(event.event)) {
-              const role = event.data?.role ? ` role=${event.data.role}` : '';
-              const reason = event.data?.stopReason ? ` ${event.data.stopReason}` : '';
-              console.log(`[EVENT] ${event.event}${role}${reason} [state=${conversationState}]`);
-            }
-
-            // Record all events (skip blobs for audioInput)
-            if (event.event === 'audioInput') {
-              return;
-            }
-            recordingEvents.push({
-              direction: event.direction,
-              event: event.event,
-              data: event.data
-            });
-
-            if (event.event === 'ready' && conversationState === 'starting') {
-              conversationState = 'turn1_sent';
-              turn1StartTime = Date.now();
-              console.log(`\n✓ Received 'ready' event`);
-
-              turn1InputAudioChunks = [...audioChunks1];
-              await sendAudio(channel, audioChunks1, 'turn 1', 0);
-              
-              responseTimeout = setTimeout(() => {
-                reject(new Error('Canary test timeout - no response after 30 seconds'));
-              }, 30000);
-              return;
-            }
-
-            if (event.event === 'textOutput') {
-              const role = event.data?.role;
-              const content = event.data?.content || '';
-              
-              if (conversationState === 'turn1_sent') {
-                if (role === 'user') {
-                  turn1UserInput += content;
-                  console.log(`[turn1 user] ${content}`);
-                } else if (role === 'assistant') {
-                  turn1AssistantResponse += content;
-                }
-              } else if (conversationState === 'turn2_sent') {
-                if (role === 'user') {
-                  turn2UserInput += content;
-                  console.log(`[turn2 user] ${content}`);
-                } else if (role === 'assistant') {
-                  turn2AssistantResponse += content;
-                }
-              }
-              
-              process.stdout.write(content);
-              transcript.events.push({
-                type: 'text_chunk',
-                timestamp: new Date().toISOString(),
-                role,
-                content
-              });
-            }
-
-            if (event.event === 'usageEvent') {
-              const details = event.data?.details;
-              console.log(`[usageEvent] delta: ${JSON.stringify(details?.delta)}, total: ${JSON.stringify(details?.total)}`);
-              if (details?.delta) {
-                deltaTokenSum.input.speechTokens += details.delta.input?.speechTokens || 0;
-                deltaTokenSum.input.textTokens += details.delta.input?.textTokens || 0;
-                deltaTokenSum.output.speechTokens += details.delta.output?.speechTokens || 0;
-                deltaTokenSum.output.textTokens += details.delta.output?.textTokens || 0;
-              }
-              if (details?.total) {
-                transcript.usage_summary.final_total = {
-                  total_input_tokens: {
-                    speechTokens: details.total.input?.speechTokens || 0,
-                    textTokens: details.total.input?.textTokens || 0
-                  },
-                  total_output_tokens: {
-                    speechTokens: details.total.output?.speechTokens || 0,
-                    textTokens: details.total.output?.textTokens || 0
-                  }
-                };
-              }
-              transcript.events.push({
-                type: 'usage_event',
-                timestamp: new Date().toISOString(),
-                usage_data: event.data
-              });
-            }
-
-            if (event.event === 'audioOutput') {
-              let totalBytes = 0;
-              const outputSampleRate = event.data?.sampleRate || 24000; // Output is typically 24kHz
-              for (const blob of event.data.blobs) {
-                const bytes = Buffer.from(blob, 'base64').length;
-                totalBytes += bytes;
-                const duration = calculateAudioDuration(blob, outputSampleRate);
-                if (conversationState === 'turn1_sent') {
-                  turn1AudioDuration += duration;
-                  turn1AudioChunks.push(blob);
-                } else if (conversationState === 'turn2_sent') {
-                  turn2AudioDuration += duration;
-                  turn2AudioChunks.push(blob);
-                }
-              }
-              transcript.events.push({
-                type: 'audio_output',
-                timestamp: new Date().toISOString(),
-                chunk_count: event.data.blobs?.length || 0,
-                total_bytes: totalBytes,
-                duration_ms: conversationState === 'turn1_sent' ? turn1AudioDuration : turn2AudioDuration
-              });
-              return;
-            }
-
-            if (event.event === 'audioOutput') {
-              return;
-            }
-
-            if (event.event === 'audioStop') {
-              if (conversationState === 'turn1_sent') {
-                turn1EndTime = Date.now();
-                conversationState = 'turn1_audio_complete';
-                clearTimeout(agentIdleTimeout);
-                agentIdleTimeout = setTimeout(() => {
-                  turn2StartTime = Date.now();
-                  turn2InputAudioChunks = [...audioChunks2];
-                  conversationState = 'turn2_sent';
-                  clearTimeout(responseTimeout);
-                  responseTimeout = setTimeout(() => {
-                    reject(new Error('Canary test timeout - no response after 30 seconds for turn 2'));
-                  }, 30000);
-                  sendAudio(channel, audioChunks2, 'turn 2', 1);
-                }, 2000);
-              } else if (conversationState === 'turn2_sent') {
-                turn2EndTime = Date.now();
-                finishTest();
-              }
-            }
-
-            if (event.event === 'textStop') {
-              transcript.events.push({
-                type: 'text_stop',
-                timestamp: new Date().toISOString(),
-                stop_reason: event.data?.stopReason
-              });
-            }
-          } catch (error) {
-            console.error('Error processing event:', error);
-          }
-        },
-        error: (error) => {
-          clearTimeout(responseTimeout);
-          reject(new Error(`AppSync Events error: ${error?.message || 'unknown error'}`));
-        }
-      });
-    });
-
-  } catch (error) {
-    console.error(`\n❌ Canary test failed: ${error.message}`);
-    return {
-      success: false,
+    const result = await runTwoTurnCanary({
+      events,
+      audioChunks1,
+      audioChunks2,
       testId,
-      error: error.message
-    };
+      sessionId,
+      userId,
+      namespace: NAMESPACE,
+      agentFunctionName
+    });
+
+    console.log(`\n✅ PASS`);
+    console.log(`\n📊 Results:`);
+    console.log(`   Total time: ${result.totalTime}ms`);
+    console.log(`   Turn 1 time: ${result.turn1Time}ms`);
+    console.log(`   Turn 2 time: ${result.turn2Time}ms`);
+    console.log(`   Test ID: ${testId}`);
+
+    // Publish metrics
+    await publishMetrics('CanarySuccess', 1, testId);
+    await publishMetrics('CanaryTotalTime', result.totalTime, testId);
+    await publishMetrics('CanaryTurn1Time', result.turn1Time, testId);
+    await publishMetrics('CanaryTurn2Time', result.turn2Time, testId);
+    await publishMetrics('CanaryChannelConnectTime', result.channelConnectTime, testId);
+    await publishMetrics('CanaryAgentInvokeTime', result.agentInvokeTime, testId);
+    await publishMetrics('CanaryReadyWaitTime', result.readyWaitTime, testId);
+
+    process.exit(0);
+  } catch (error) {
+    console.error(`\n❌ FAIL: ${error.message}`);
+    await publishMetrics('CanarySuccess', 0, testId);
+    await publishMetrics('CanaryFailure', 1, testId);
+    process.exit(1);
   }
 }
 
-runTwoTurnCanary().then(async result => {
-  if (!result.success) {
-    console.log(`\n❌ FAIL`);
-    await publishMetrics('CanarySuccess', 0, result.testId);
-    await publishMetrics('CanaryFailure', 1, result.testId);
-    process.exit(1);
-  }
-
-  // Publish metrics
-  await publishMetrics('CanarySuccess', 1, result.testId);
-  await publishMetrics('CanaryTotalTime', result.totalTime, result.testId);
-  await publishMetrics('CanaryTurn1Time', result.turn1Time, result.testId);
-  await publishMetrics('CanaryTurn2Time', result.turn2Time, result.testId);
-  await publishMetrics('CanaryTotalTokens', result.transcript.usage_summary.delta_sum_calculated.total_tokens, result.testId);
-  
-  const readyWaitTime = result.turn1StartTime - result.startTime;
-  await publishMetrics('CanaryAudioLoadTime', 0, result.testId);
-  await publishMetrics('CanaryChannelConnectTime', 0, result.testId);
-  await publishMetrics('CanaryAgentInvokeTime', 0, result.testId);
-  await publishMetrics('CanaryReadyWaitTime', readyWaitTime, result.testId);
-  
-  // Save to S3
-  await saveTranscriptToS3(result.testId, result.transcript);
-  if (process.env.AUDIO_BUCKET) {
-    await saveRecordingsToS3(result.testId, result.recordingDir);
-  }
-
-  console.log(`\n✅ PASS`);
-  process.exit(0);
-}).catch(async error => {
-  console.error('Fatal error:', error);
-  await publishMetrics('CanarySuccess', 0, 'unknown');
-  await publishMetrics('CanaryFailure', 1, 'unknown');
-  process.exit(1);
-});
+main();

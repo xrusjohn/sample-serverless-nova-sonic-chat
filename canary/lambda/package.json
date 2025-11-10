@@ -4,13 +4,14 @@
   "description": "Nova Sonic canary testing function",
   "main": "index.js",
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.0.0",
     "@aws-sdk/client-cloudwatch": "^3.0.0",
-    "@aws-sdk/client-lambda": "^3.0.0",
     "@aws-sdk/client-dynamodb": "^3.0.0",
+    "@aws-sdk/client-lambda": "^3.0.0",
+    "@aws-sdk/client-s3": "^3.0.0",
     "@aws-sdk/credential-providers": "^3.0.0",
     "aws-amplify": "^6.0.0",
-    "ws": "^8.14.2",
-    "uuid": "^9.0.1"
+    "sonic-canary-shared": "file:../shared",
+    "uuid": "^9.0.1",
+    "ws": "^8.14.2"
   }
 }

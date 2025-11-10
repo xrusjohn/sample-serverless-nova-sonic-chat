@@ -43,6 +43,11 @@ export const SpeechToSpeechEventSchema = z.discriminatedUnion('event', [
   }),
   z.object({
     direction: z.literal('btoc'),
+    event: z.literal('audioStop'),
+    data: z.object({}),
+  }),
+  z.object({
+    direction: z.literal('btoc'),
     event: z.literal('end'),
     data: z.object({
       reason: z.string().optional(),

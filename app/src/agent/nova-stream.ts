@@ -39,9 +39,10 @@ export class NovaStream {
   private readonly promptName: string;
   private audioContentId: string;
 
-  private isActive: boolean;
+  public isActive: boolean;
   private isAudioStarted: boolean;
   private isProcessingAudio: boolean;
+  private hasAudioData: boolean;
 
   private _stream: InvokeModelWithBidirectionalStreamCommandOutput | undefined = undefined;
 
@@ -59,6 +60,7 @@ export class NovaStream {
     this.isAudioStarted = false;
     this.isProcessingAudio = false;
     this.isActive = true;
+    this.hasAudioData = false;
   }
 
   public get iterator() {
@@ -223,17 +225,23 @@ export class NovaStream {
     return result;
   }
 
-  public close() {
-    console.log('closing a session');
+  public terminate() {
+    console.log('terminating session (user requested)');
     const promptName = this.promptName;
-    this.eventQueue.push({
-      event: {
-        contentEnd: {
-          promptName,
-          contentName: this.audioContentId,
+    
+    // Must close audio content before ending prompt
+    if (this.isAudioStarted) {
+      console.log(`Closing audio content (hasData=${this.hasAudioData})`);
+      this.eventQueue.push({
+        event: {
+          contentEnd: {
+            promptName,
+            contentName: this.audioContentId,
+          },
         },
-      },
-    });
+      });
+    }
+    
     this.eventQueue.push({
       event: {
         promptEnd: {
@@ -246,8 +254,45 @@ export class NovaStream {
         sessionEnd: {},
       },
     });
+    
+    this.isActive = false;
+    this.isAudioStarted = false;
+    this.hasAudioData = false;
+    this._stream = undefined;
+  }
+
+  public close() {
+    console.log('closing session (natural end)');
+    const promptName = this.promptName;
+    
+    // Only end audio content if it has data
+    if (this.hasAudioData) {
+      this.eventQueue.push({
+        event: {
+          contentEnd: {
+            promptName,
+            contentName: this.audioContentId,
+          },
+        },
+      });
+    }
+    
+    this.eventQueue.push({
+      event: {
+        promptEnd: {
+          promptName,
+        },
+      },
+    });
+    this.eventQueue.push({
+      event: {
+        sessionEnd: {},
+      },
+    });
+    
     this._stream = undefined;
     this.isAudioStarted = false;
+    this.hasAudioData = false;
   }
 
   public enqueueSessionStart() {
@@ -451,6 +496,7 @@ export class NovaStream {
     });
 
     this.isAudioStarted = true;
+    this.hasAudioData = false;
   }
 
   public enqueueAudioInput(audioInputBase64Array: string[]) {
@@ -490,6 +536,7 @@ export class NovaStream {
           },
         },
       });
+      this.hasAudioData = true;
     }
 
     if (this.isAudioStarted) {

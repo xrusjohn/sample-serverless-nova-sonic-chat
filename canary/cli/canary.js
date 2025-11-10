@@ -53,8 +53,17 @@ const arrayBufferToBase64 = (buffer) => {
 };
 
 function loadAudioChunks(filePath) {
-  const buffer = fs.readFileSync(filePath);
-  const base64Audio = arrayBufferToBase64(buffer);
+  const audioBuffer = fs.readFileSync(filePath);
+  const silencePath = path.join(__dirname, '../audio/silence_1s.raw');
+  
+  // Add silence padding if silence file exists
+  let combinedBuffer = audioBuffer;
+  if (fs.existsSync(silencePath)) {
+    const silenceBuffer = fs.readFileSync(silencePath);
+    combinedBuffer = Buffer.concat([audioBuffer, silenceBuffer]);
+  }
+  
+  const base64Audio = arrayBufferToBase64(combinedBuffer);
   const chunkSize = 4096;
   const chunks = [];
   for (let i = 0; i < base64Audio.length; i += chunkSize) {

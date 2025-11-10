@@ -15,13 +15,6 @@ async function publishMetrics(metricName, value, testId) {
           MetricName: metricName,
           Value: value,
           Unit: metricName.includes('Time') ? 'Milliseconds' : 'Count',
-          Dimensions: [{ Name: 'TestId', Value: testId }],
-          Timestamp: new Date()
-        },
-        {
-          MetricName: metricName,
-          Value: value,
-          Unit: metricName.includes('Time') ? 'Milliseconds' : 'Count',
           Timestamp: new Date()
         }
       ]
@@ -73,36 +66,9 @@ async function runTwoTurnConversation({ channel, audioChunks1, audioChunks2, tes
           }
         }
 
-        if (event.event === 'textStop' && state === 'turn2' && event.data?.stopReason === 'PARTIAL_TURN') {
-          turn2End = Date.now();
-          clearTimeout(timeout);
-          clearTimeout(responseTimeout);
-          
-          // Wait for audio to accumulate then wait for playback
-          setTimeout(() => {
-            const waitTime = Math.max(turn2AudioDuration + 500, 2000);
-            console.log(`[${testId}] Turn 2 text complete, audio: ${turn2AudioDuration.toFixed(0)}ms, waiting ${waitTime.toFixed(0)}ms`);
-            
-            setTimeout(() => {
-              console.log(`[${testId}] Sending terminateSession`);
-              channel.publish({ direction: 'ctob', event: 'terminateSession', data: {} });
-              
-              const result = {
-                totalTime: Date.now() - startTime,
-                turn1Time: turn1End - turn1Start,
-                turn2Time: turn2End - turn2Start,
-                turn1Text,
-                turn2Text,
-                readyWaitTime
-              };
-              console.log(`[${testId}] Test complete: total=${result.totalTime}ms, turn1=${result.turn1Time}ms, turn2=${result.turn2Time}ms`);
-              resolve(result);
-            }, waitTime);
-          }, 1500);
-        }
-
-        if (event.event === 'audioStop' && state === 'turn1') {
-          console.log(`[${testId}] audioStop received, state=${state}`);
+        if (event.event === 'audioStop') {
+          if (state === 'turn1') {
+            console.log(`[${testId}] audioStop received, state=${state}`);
             turn1End = Date.now();
             console.log(`[${testId}] Turn 1 complete: ${turn1End - turn1Start}ms, audio: ${turn1AudioDuration.toFixed(0)}ms`);
             clearTimeout(responseTimeout);
@@ -111,8 +77,34 @@ async function runTwoTurnConversation({ channel, audioChunks1, audioChunks2, tes
               turn2Start = Date.now();
               channel.publish({ direction: 'ctob', event: 'audioInput', data: { blobs: audioChunks2, sequence: 1 } });
               console.log(`[${testId}] Turn 2 audio sent`);
+              // Give Bedrock time to process audio before signaling end
+              setTimeout(() => {
+                channel.publish({ direction: 'ctob', event: 'endAudioInput', data: {} });
+                console.log(`[${testId}] endAudioInput sent`);
+              }, 2000); // Wait 2s for Bedrock to process
               responseTimeout = setTimeout(() => reject(new Error('Turn 2 timeout')), 30000);
             }, 2000);
+          } else if (state === 'turn2') {
+            turn2End = Date.now();
+            console.log(`[${testId}] Turn 2 complete: ${turn2End - turn2Start}ms`);
+            clearTimeout(timeout);
+            clearTimeout(responseTimeout);
+            
+            // Terminate immediately after audioStop to prevent empty content creation
+            console.log(`[${testId}] Sending terminateSession`);
+            channel.publish({ direction: 'ctob', event: 'terminateSession', data: {} });
+            
+            const result = {
+              totalTime: Date.now() - startTime,
+              turn1Time: turn1End - turn1Start,
+              turn2Time: turn2End - turn2Start,
+              turn1Text,
+              turn2Text,
+              readyWaitTime
+            };
+            console.log(`[${testId}] Test complete: total=${result.totalTime}ms, turn1=${result.turn1Time}ms, turn2=${result.turn2Time}ms`);
+            resolve(result);
+          }
         }
       },
       error: reject

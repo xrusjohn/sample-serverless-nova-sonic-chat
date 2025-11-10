@@ -229,7 +229,7 @@ export class NovaStream {
     console.log('terminating session (user requested)');
     const promptName = this.promptName;
     
-    // Must close audio content before ending prompt
+    // Always close audio content if started (required by Bedrock)
     if (this.isAudioStarted) {
       console.log(`Closing audio content (hasData=${this.hasAudioData})`);
       this.eventQueue.push({

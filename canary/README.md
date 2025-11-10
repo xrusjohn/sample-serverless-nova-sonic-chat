@@ -52,9 +52,30 @@ const canary = new Canary(this, 'Canary', {
 
 ## Monitoring
 
-- Check CloudWatch Logs for canary Lambda execution logs
-- Review S3 buckets for test results and audio files
-- Monitor EventBridge rule execution in CloudWatch Events
+### CloudWatch Logs
+- Check Lambda execution logs for detailed test output
+- View logs: `/aws/lambda/<CanaryFunctionName>`
+
+### CloudWatch Metrics
+Metrics are published to the `SonicCanary` namespace without dimensions for easy aggregation:
+
+- **CanarySuccess**: 1 for success, 0 for failure
+- **CanaryTotalTime**: Total test duration (ms)
+- **CanaryTurn1Time**: First conversation turn duration (ms)
+- **CanaryTurn2Time**: Second conversation turn duration (ms)
+- **CanaryChannelConnectTime**: AppSync Events connection time (ms)
+- **CanaryAgentInvokeTime**: Agent Lambda invocation time (ms)
+- **CanaryReadyWaitTime**: Time waiting for agent ready event (ms)
+- **CanaryAudioLoadTime**: Time to load audio from S3 (ms)
+
+**Dashboard Setup:**
+- Use **Stacked Area Chart** to visualize timing breakdown
+- Set **Period to 15 minutes** to align with canary frequency
+- Metrics appear within 1-3 minutes of test completion
+
+### S3 Storage
+- Test results and audio files stored in S3 buckets
+- Useful for debugging failures and analyzing audio quality
 
 ## Configuration
 

@@ -94,6 +94,9 @@ export const initializeSubscription = async (channelPath: string, context: { str
       clientInitialized = true;
       if (event.event === 'audioInput') {
         sequencer.next(event.data.blobs, event.data.sequence);
+      } else if (event.event === 'endAudioInput') {
+        // Explicitly close current audio content to signal end of speech
+        stream.restartAudioInput();
       } else if (event.event === 'terminateSession') {
         stream.terminate();
       }

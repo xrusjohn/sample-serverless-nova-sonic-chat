@@ -108,7 +108,7 @@ export const initializeSubscription = async (channelPath: string, context: { str
     next: async (data: { event: unknown }) => {
       const { data: event, error } = SpeechToSpeechEventSchema.safeParse(data.event);
       if (error) {
-        console.log(error);
+        console.log('⚠️  Unknown event received (ignoring):', JSON.stringify(data.event).substring(0, 200));
         return;
       }
       if (!['audioInput'].includes(event.event)) {

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+// Use passthrough() to allow unknown events without validation errors
 export const SpeechToSpeechEventSchema = z.discriminatedUnion('event', [
   // event schemas sent from server (btoc, bedrock to client)
   z.object({
@@ -65,8 +66,19 @@ export const SpeechToSpeechEventSchema = z.discriminatedUnion('event', [
   }),
   z.object({
     direction: z.literal('ctob'),
+    event: z.literal('endAudioInput'),
+    data: z.object({}),
+  }),
+  z.object({
+    direction: z.literal('ctob'),
     event: z.literal('terminateSession'),
     data: z.object({}),
+  }),
+  // Catch-all for unknown events to prevent crashes
+  z.object({
+    direction: z.enum(['btoc', 'ctob']),
+    event: z.string(),
+    data: z.any(),
   }),
 ]);
 

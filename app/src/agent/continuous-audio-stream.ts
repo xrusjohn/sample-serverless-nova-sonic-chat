@@ -48,7 +48,14 @@ export class ContinuousAudioStream {
   private getNextAudioChunk(): string {
     const chunkBytes = Math.floor((this.sampleRate * this.chunkSizeMs * this.bytesPerSample) / 1000);
     
+    // Check if we need to reset to first file
     if (this.currentFileIndex >= this.audioBuffers.length) {
+      this.currentFileIndex = 0;
+      this.currentPosition = 0;
+    }
+    
+    // If no audio files, generate silence
+    if (this.audioBuffers.length === 0) {
       return this.generateSilence(this.chunkSizeMs);
     }
     
@@ -59,7 +66,10 @@ export class ContinuousAudioStream {
       // End of current file, move to next
       const remainingBytes = currentBuffer.length - this.currentPosition;
       const chunk = Buffer.alloc(chunkBytes, 0);
-      currentBuffer.copy(chunk, 0, this.currentPosition, currentBuffer.length);
+      
+      if (remainingBytes > 0) {
+        currentBuffer.copy(chunk, 0, this.currentPosition, currentBuffer.length);
+      }
       
       this.currentFileIndex++;
       this.currentPosition = 0;

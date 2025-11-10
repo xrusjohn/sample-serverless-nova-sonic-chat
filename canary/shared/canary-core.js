@@ -41,6 +41,14 @@ async function runTwoTurnConversation({ channel, audioChunks1, audioChunks2, tes
       next: async (data) => {
         const event = data.event;
 
+        if (event.event === 'error') {
+          console.error(`[${testId}] Error event received:`, event.data?.message);
+          clearTimeout(timeout);
+          clearTimeout(responseTimeout);
+          reject(new Error(`Agent error: ${event.data?.message || 'Unknown error'}`));
+          return;
+        }
+
         if (event.event === 'ready' && state === 'starting') {
           readyWaitTime = Date.now() - startTime;
           console.log(`[${testId}] Ready received: ${readyWaitTime}ms`);

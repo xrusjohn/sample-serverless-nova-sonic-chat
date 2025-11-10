@@ -54,6 +54,14 @@ export const SpeechToSpeechEventSchema = z.discriminatedUnion('event', [
       reason: z.string().optional(),
     }),
   }),
+  z.object({
+    direction: z.literal('btoc'),
+    event: z.literal('error'),
+    data: z.object({
+      message: z.string(),
+      type: z.string().optional(),
+    }),
+  }),
 
   // event schemas sent from client (ctob, client to bedrock)
   z.object({

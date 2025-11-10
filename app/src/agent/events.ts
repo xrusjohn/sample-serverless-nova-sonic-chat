@@ -108,7 +108,15 @@ export const initializeSubscription = async (channelPath: string, context: { str
     next: async (data: { event: unknown }) => {
       const { data: event, error } = SpeechToSpeechEventSchema.safeParse(data.event);
       if (error) {
-        console.log('⚠️  Unknown event received (ignoring):', JSON.stringify(data.event).substring(0, 200));
+        const unknownEvent = JSON.stringify(data.event).substring(0, 200);
+        console.log('⚠️  Unknown event received:', unknownEvent);
+        await dispatchEvent(channel, {
+          event: 'error',
+          data: {
+            message: `Unknown event type received: ${unknownEvent}`,
+            type: 'SCHEMA_VALIDATION_ERROR',
+          },
+        });
         return;
       }
       if (!['audioInput'].includes(event.event)) {

@@ -6,8 +6,8 @@ export class CanaryDashboard extends Construct {
   constructor(scope: Construct, id: string) {
     super(scope, id);
 
-    const dashboard = new Dashboard(this, 'DashboardV2', {
-      dashboardName: 'SonicCanaryV2',
+    const dashboard = new Dashboard(this, 'DashboardV3', {
+      dashboardName: 'SonicCanaryV3',
     });
 
     const successRate = new Metric({
@@ -28,17 +28,15 @@ export class CanaryDashboard extends Construct {
 
     // Streaming Canary metrics
     const streamingSuccessRate = new Metric({
-      namespace: 'StreamingCanary',
-      metricName: 'StreamingCanarySuccess',
+      namespace: 'SonicCanary',
+      metricName: 'SonicCanarySuccess',
       statistic: 'Average',
     });
-    const streamingTotalTime = new Metric({ namespace: 'StreamingCanary', metricName: 'StreamingCanaryTotalTime', statistic: 'Average' });
-    const streamingTurn1ReasoningTime = new Metric({ namespace: 'StreamingCanary', metricName: 'StreamingCanaryTurn1ReasoningTime', statistic: 'Average' });
-    const streamingTurn2ReasoningTime = new Metric({ namespace: 'StreamingCanary', metricName: 'StreamingCanaryTurn2ReasoningTime', statistic: 'Average' });
-    const streamingTurn1SendTime = new Metric({ namespace: 'StreamingCanary', metricName: 'StreamingCanaryTurn1SendTime', statistic: 'Average' });
-    const streamingTurn1ReceiveTime = new Metric({ namespace: 'StreamingCanary', metricName: 'StreamingCanaryTurn1ReceiveTime', statistic: 'Average' });
-    const streamingChannelConnectTime = new Metric({ namespace: 'StreamingCanary', metricName: 'StreamingCanaryChannelConnectTime', statistic: 'Average' });
-    const streamingReadyWaitTime = new Metric({ namespace: 'StreamingCanary', metricName: 'StreamingCanaryReadyWaitTime', statistic: 'Average' });
+    const streamingTotalTime = new Metric({ namespace: 'SonicCanary', metricName: 'SonicCanaryTotalTime', statistic: 'Average' });
+    const streamingTurn1ReasoningTime = new Metric({ namespace: 'SonicCanary', metricName: 'SonicCanaryTurn1ReasoningTime', statistic: 'Average' });
+    const streamingTurn2ReasoningTime = new Metric({ namespace: 'SonicCanary', metricName: 'SonicCanaryTurn2ReasoningTime', statistic: 'Average' });
+    const streamingTurn1SendTime = new Metric({ namespace: 'SonicCanary', metricName: 'SonicCanaryTurn1SendTime', statistic: 'Average' });
+    const streamingTurn1ReceiveTime = new Metric({ namespace: 'SonicCanary', metricName: 'SonicCanaryTurn1ReceiveTime', statistic: 'Average' });
 
     // Convert success rates to percentages
     const successRatePercent = new MathExpression({

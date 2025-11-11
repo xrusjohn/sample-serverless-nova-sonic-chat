@@ -6,13 +6,25 @@ export class CanaryDashboard extends Construct {
   constructor(scope: Construct, id: string) {
     super(scope, id);
 
-    const dashboard = new Dashboard(this, 'DashboardV3', {
-      dashboardName: 'SonicCanaryV3',
+    const dashboard = new Dashboard(this, 'DashboardV4', {
+      dashboardName: 'SonicCanaryV4',
     });
 
     const successRate = new Metric({
       namespace: 'SonicCanary',
       metricName: 'SonicCanarySuccess',
+      statistic: 'Average',
+    });
+
+    const timeoutRate = new Metric({
+      namespace: 'SonicCanary',
+      metricName: 'SonicCanaryTimeout',
+      statistic: 'Average',
+    });
+
+    const failureRate = new Metric({
+      namespace: 'SonicCanary',
+      metricName: 'SonicCanaryFailure',
       statistic: 'Average',
     });
 
@@ -26,29 +38,15 @@ export class CanaryDashboard extends Construct {
     const agentInvokeTime = new Metric({ namespace: 'SonicCanary', metricName: 'SonicCanaryAgentInvokeTime', statistic: 'Average' });
     const readyWaitTime = new Metric({ namespace: 'SonicCanary', metricName: 'SonicCanaryReadyWaitTime', statistic: 'Average' });
 
-    // Streaming Canary metrics
-    const streamingSuccessRate = new Metric({
-      namespace: 'SonicCanary',
-      metricName: 'SonicCanarySuccess',
-      statistic: 'Average',
-    });
-    const streamingTotalTime = new Metric({ namespace: 'SonicCanary', metricName: 'SonicCanaryTotalTime', statistic: 'Average' });
-    const streamingTurn1ReasoningTime = new Metric({ namespace: 'SonicCanary', metricName: 'SonicCanaryTurn1ReasoningTime', statistic: 'Average' });
-    const streamingTurn2ReasoningTime = new Metric({ namespace: 'SonicCanary', metricName: 'SonicCanaryTurn2ReasoningTime', statistic: 'Average' });
-    const streamingTurn1SendTime = new Metric({ namespace: 'SonicCanary', metricName: 'SonicCanaryTurn1SendTime', statistic: 'Average' });
-    const streamingTurn1ReceiveTime = new Metric({ namespace: 'SonicCanary', metricName: 'SonicCanaryTurn1ReceiveTime', statistic: 'Average' });
+    const turn1ReasoningTime = new Metric({ namespace: 'SonicCanary', metricName: 'SonicCanaryTurn1ReasoningTime', statistic: 'Average' });
+    const turn2ReasoningTime = new Metric({ namespace: 'SonicCanary', metricName: 'SonicCanaryTurn2ReasoningTime', statistic: 'Average' });
+    const turn1SendTime = new Metric({ namespace: 'SonicCanary', metricName: 'SonicCanaryTurn1SendTime', statistic: 'Average' });
+    const turn1ReceiveTime = new Metric({ namespace: 'SonicCanary', metricName: 'SonicCanaryTurn1ReceiveTime', statistic: 'Average' });
 
-    // Convert success rates to percentages
     const successRatePercent = new MathExpression({
       expression: 'm1 * 100',
       usingMetrics: { m1: successRate },
       label: 'Success Rate %',
-    });
-
-    const streamingSuccessRatePercent = new MathExpression({
-      expression: 'm1 * 100', 
-      usingMetrics: { m1: streamingSuccessRate },
-      label: 'Streaming Success Rate %',
     });
 
     // Bedrock metrics
@@ -100,46 +98,34 @@ export class CanaryDashboard extends Construct {
 
     dashboard.addWidgets(
       new SingleValueWidget({
-        title: 'Success Rate (Last Hour)',
+        title: 'Success Rate',
         metrics: [successRatePercent],
         sparkline: true,
         width: 6,
         height: 3,
+        period: Duration.minutes(5), // Use 5-minute periods for more responsive updates
       }),
       new SingleValueWidget({
-        title: 'Avg Total Time (Last Hour)',
+        title: 'Avg Total Time',
         metrics: [totalTime],
         sparkline: true,
         width: 6,
         height: 3,
+        period: Duration.minutes(5),
       }),
-      new SingleValueWidget({
-        title: 'Streaming Success Rate',
-        metrics: [streamingSuccessRatePercent],
-        sparkline: true,
-        width: 6,
-        height: 3,
-      }),
-      new SingleValueWidget({
-        title: 'Streaming Total Time',
-        metrics: [streamingTotalTime],
-        sparkline: true,
-        width: 6,
-        height: 3,
-      })
     );
 
     dashboard.addWidgets(
       new SingleValueWidget({
         title: 'Turn 1 Reasoning Latency',
-        metrics: [streamingTurn1ReasoningTime],
+        metrics: [turn1ReasoningTime],
         sparkline: true,
         width: 6,
         height: 3,
       }),
       new SingleValueWidget({
         title: 'Turn 2 Reasoning Latency',
-        metrics: [streamingTurn2ReasoningTime],
+        metrics: [turn2ReasoningTime],
         sparkline: true,
         width: 6,
         height: 3,
@@ -168,8 +154,8 @@ export class CanaryDashboard extends Construct {
         height: 6,
       }),
       new GraphWidget({
-        title: 'Streaming Latency Breakdown (Turn 1)',
-        left: [streamingTurn1SendTime, streamingTurn1ReasoningTime, streamingTurn1ReceiveTime],
+        title: 'Latency Breakdown (Turn 1)',
+        left: [turn1SendTime, turn1ReasoningTime, turn1ReceiveTime],
         width: 12,
         height: 6,
         stacked: true,
@@ -186,7 +172,7 @@ export class CanaryDashboard extends Construct {
       }),
       new GraphWidget({
         title: 'Nova Sonic Reasoning Latency',
-        left: [streamingTurn1ReasoningTime, streamingTurn2ReasoningTime],
+        left: [turn1ReasoningTime, turn2ReasoningTime],
         width: 12,
         height: 6,
       })
@@ -194,10 +180,11 @@ export class CanaryDashboard extends Construct {
 
     dashboard.addWidgets(
       new GraphWidget({
-        title: 'Success Rate Over Time',
-        left: [successRate],
+        title: 'Canary Test Results',
+        left: [successRate, timeoutRate, failureRate],
         width: 12,
         height: 6,
+        stacked: true,
       }),
       new GraphWidget({
         title: 'Bedrock Nova Sonic Invocations',

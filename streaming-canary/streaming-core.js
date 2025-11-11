@@ -305,6 +305,9 @@ class StreamingCore {
           
           const totalTime = Date.now() - startTime;
           
+          // Clear timeout to prevent duplicate failure metric
+          clearTimeout(timeoutId);
+          
           // Publish metrics like existing canary
           await this.publishMetrics('SonicCanarySuccess', 1, sessionId);
           await this.publishMetrics('SonicCanaryTotalTime', totalTime, sessionId);
@@ -522,6 +525,7 @@ class StreamingCore {
           }
         },
         error: async (error) => {
+          clearTimeout(timeoutId);
           await this.publishMetrics('SonicCanarySuccess', 0, sessionId);
           await this.publishMetrics('SonicCanaryFailure', 1, sessionId);
           resolve({ statusCode: 500, error: error.message });
@@ -529,7 +533,7 @@ class StreamingCore {
       });
       
       // Timeout with failure metrics
-      setTimeout(async () => {
+      const timeoutId = setTimeout(async () => {
         const totalTime = Date.now() - startTime;
         await this.publishMetrics('SonicCanarySuccess', 0, sessionId);
         await this.publishMetrics('SonicCanaryTimeout', 1, sessionId);

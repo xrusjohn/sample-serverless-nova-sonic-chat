@@ -229,8 +229,8 @@ export class NovaStream {
     console.log('terminating session (user requested)');
     const promptName = this.promptName;
     
-    // Always close audio content if started (required by Bedrock)
-    if (this.isAudioStarted) {
+    // Only close audio content if it has data (to avoid ValidationException)
+    if (this.isAudioStarted && this.hasAudioData) {
       console.log(`Closing audio content (hasData=${this.hasAudioData})`);
       this.eventQueue.push({
         event: {
@@ -500,9 +500,15 @@ export class NovaStream {
   }
 
   public enqueueAudioInput(audioInputBase64Array: string[]) {
-    if (!this.isAudioStarted || !this.isActive) {
-      console.log(`⚠️  enqueueAudioInput ignored: isAudioStarted=${this.isAudioStarted}, isActive=${this.isActive}`);
+    if (!this.isActive) {
+      console.log(`⚠️  enqueueAudioInput ignored: isActive=${this.isActive}`);
       return;
+    }
+    
+    // Lazy initialization: start audio content if not already started
+    if (!this.isAudioStarted) {
+      console.log('🎤 Lazy-starting audio content for new turn');
+      this.enqueueAudioStart();
     }
 
     console.log(`📥 Enqueuing ${audioInputBase64Array.length} audio chunks`);
@@ -616,17 +622,26 @@ export class NovaStream {
     return res;
   }
 
-  public restartAudioInput() {
+  public endAudioInput() {
+    if (!this.isAudioStarted) {
+      console.log('⚠️  endAudioInput ignored: audio not started');
+      return;
+    }
     const promptName = this.promptName;
-    const oldAudioContentId = this.audioContentId;
+    const audioContentId = this.audioContentId;
     this.eventQueue.push({
       event: {
         contentEnd: {
           promptName,
-          contentName: oldAudioContentId,
+          contentName: audioContentId,
         },
       },
     });
+    this.isAudioStarted = false;
+  }
+
+  public restartAudioInput() {
+    this.endAudioInput();
     this.enqueueAudioStart();
   }
 }

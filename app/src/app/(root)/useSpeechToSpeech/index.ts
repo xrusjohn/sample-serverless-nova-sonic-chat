@@ -212,6 +212,9 @@ export const useSpeechToSpeech = (userId: string, onSessionComplete: (endReason:
         }
         if (event.direction !== 'btoc') return;
 
+        // Type guard: treat event.data as any since union with catch-all breaks type narrowing
+        const eventData = event.data as any;
+
         if (event.event === 'ready') {
           startRecording()
             .then(() => {
@@ -223,17 +226,17 @@ export const useSpeechToSpeech = (userId: string, onSessionComplete: (endReason:
               closeSession(e.message);
             });
         } else if (event.event === 'end') {
-          closeSession(event.data.reason);
+          closeSession(eventData.reason);
         } else if (event.event === 'audioOutput' && audioPlayerRef.current) {
-          sequencer.next(event.data.blobs, event.data.sequence);
+          sequencer.next(eventData.blobs, eventData.sequence);
         } else if (event.event === 'textStart') {
-          onTextStart(event.data);
+          onTextStart(eventData);
         } else if (event.event === 'textOutput') {
-          onTextOutput(event.data);
+          onTextOutput(eventData);
         } else if (event.event === 'textStop') {
-          onTextStop(event.data);
+          onTextStop(eventData);
 
-          if (event.data.stopReason && event.data.stopReason === 'INTERRUPTED') {
+          if (eventData.stopReason === 'INTERRUPTED') {
             audioPlayerRef.current?.bargeIn();
           }
         }

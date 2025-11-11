@@ -7,7 +7,6 @@ import { Bucket } from 'aws-cdk-lib/aws-s3';
 import { BucketDeployment, Source } from 'aws-cdk-lib/aws-s3-deployment';
 import { Construct } from 'constructs';
 import { EventBus } from './event-bus';
-import { CanaryDashboard } from './canary-dashboard';
 
 export interface CanaryProps {
   eventBus: EventBus;
@@ -87,13 +86,12 @@ export class Canary extends Construct {
     // Grant permission to invoke the agent handler
     agentHandler.grantInvoke(canaryFunction);
 
-    // EventBridge rule to trigger canary every 15 minutes
+    // EventBridge rule to trigger canary every 5 minutes
     new Rule(this, 'CanarySchedule', {
-      schedule: Schedule.rate(Duration.minutes(15)),
+      schedule: Schedule.rate(Duration.minutes(5)),
       targets: [new LambdaFunction(canaryFunction)],
     });
 
-    // CloudWatch Dashboard
-    new CanaryDashboard(this, 'Dashboard');
+    // CloudWatch Dashboard moved to streaming stack
   }
 }

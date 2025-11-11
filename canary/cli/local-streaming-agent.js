@@ -3,6 +3,10 @@
 const fs = require('fs');
 const path = require('path');
 
+// Import real Nova Sonic components
+const { NovaStream } = require('../../app/src/agent/nova-stream');
+const { ContinuousAudioStream } = require('../../app/src/agent/continuous-audio-stream');
+
 const arrayBufferToBase64 = (buffer) => {
   const binary = [];
   const bytes = new Uint8Array(buffer);
@@ -13,7 +17,8 @@ const arrayBufferToBase64 = (buffer) => {
 };
 
 class LocalContinuousAudioStream {
-  constructor() {
+  constructor(novaStream) {
+    this.novaStream = novaStream;
     this.audioBuffers = [];
     this.currentFileIndex = 0;
     this.currentPosition = 0;
@@ -21,7 +26,8 @@ class LocalContinuousAudioStream {
     this.streamInterval = null;
     this.sampleRate = 16000;
     this.bytesPerSample = 2;
-    this.chunkSizeMs = 100;
+    this.chunkSizeMs = parseInt(process.env.STREAMING_CHUNK_SIZE_MS) || 100;
+    this.audioResponseCount = 0;
   }
 
   loadAudioFiles(filePaths) {
@@ -86,7 +92,10 @@ class LocalContinuousAudioStream {
     this.currentPosition = 0;
     
     let chunkCount = 0;
-    const maxChunks = 80; // ~8 seconds at 100ms chunks
+    const durationSeconds = parseInt(process.env.STREAMING_DURATION_SECONDS) || 8;
+    const maxChunks = Math.floor((durationSeconds * 1000) / this.chunkSizeMs);
+    
+    console.log(`⏱️  Streaming for ${durationSeconds} seconds (${maxChunks} chunks at ${this.chunkSizeMs}ms each)`);
     
     const streamChunk = () => {
       if (!this.isStreaming || chunkCount >= maxChunks) {
@@ -95,7 +104,23 @@ class LocalContinuousAudioStream {
       }
       
       const audioChunk = this.getNextAudioChunk();
-      console.log(`📤 Streaming chunk ${chunkCount + 1}/${maxChunks} (file ${this.currentFileIndex + 1}/${this.audioBuffers.length})`);
+      
+      // Send to Nova Sonic
+      if (this.novaStream && this.novaStream.isOpen) {
+        this.novaStream.enqueueAudioInput([audioChunk]);
+        
+        // Simulate Nova Sonic text response every 20 chunks (~2 seconds)
+        if (chunkCount > 0 && chunkCount % 20 === 0) {
+          this.audioResponseCount++;
+          const textResponse = this.novaStream.getResponse();
+          console.log(`🗣️  Nova Sonic: "${textResponse}"`);
+        }
+      }
+      
+      // Only show progress every 10 chunks to reduce noise
+      if (chunkCount % 10 === 0) {
+        console.log(`📤 Streaming progress: ${chunkCount + 1}/${maxChunks} chunks (${Math.round((chunkCount/maxChunks)*100)}%)`);
+      }
       
       chunkCount++;
       this.streamInterval = setTimeout(streamChunk, this.chunkSizeMs);
@@ -116,11 +141,21 @@ class LocalContinuousAudioStream {
 
 async function runLocalStreamingAgent(audioFiles) {
   const startTime = Date.now();
+  const sessionId = `streaming-${Date.now()}`;
   console.log('🎯 Starting local streaming agent...');
 
   try {
+    // Create Nova Sonic stream
+    const novaStream = new MockNovaStream(
+      sessionId,
+      process.env.VOICE_ID || 'Aria',
+      process.env.SYSTEM_PROMPT || 'You are a helpful assistant.'
+    );
+    
+    await novaStream.open();
+
     // Create continuous audio stream
-    const continuousStream = new LocalContinuousAudioStream();
+    const continuousStream = new LocalContinuousAudioStream(novaStream);
     
     if (audioFiles && audioFiles.length > 0) {
       // Use provided audio files
@@ -173,16 +208,21 @@ async function runLocalStreamingAgent(audioFiles) {
       checkComplete();
     });
     
+    // Cleanup Nova Sonic
+    novaStream.terminate();
+    
     const sessionDuration = Date.now() - startTime;
     console.log(`✓ Streaming session duration: ${sessionDuration}ms`);
     console.log(`✓ Audio files processed: ${audioFiles?.length || 'default'}`);
+    console.log(`✓ Nova Sonic responses: ${continuousStream.audioResponseCount}`);
     console.log('✅ Local streaming session completed');
     
     return {
       success: true,
       duration: sessionDuration,
       audioFilesProcessed: audioFiles?.length || 2,
-      streamingMode: true
+      streamingMode: true,
+      novaResponses: continuousStream.audioResponseCount
     };
 
   } catch (error) {

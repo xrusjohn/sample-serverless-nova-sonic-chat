@@ -95,8 +95,9 @@ export const initializeSubscription = async (channelPath: string, context: { str
       if (event.event === 'audioInput') {
         sequencer.next(event.data.blobs, event.data.sequence);
       } else if (event.event === 'endAudioInput') {
-        // Explicitly close current audio content to signal end of speech
-        stream.restartAudioInput();
+        // Close current audio content to signal end of speech
+        // Audio will be lazy-initialized when user sends more audio
+        stream.endAudioInput();
       } else if (event.event === 'terminateSession') {
         stream.terminate();
       }
@@ -108,15 +109,14 @@ export const initializeSubscription = async (channelPath: string, context: { str
     next: async (data: { event: unknown }) => {
       const { data: event, error } = SpeechToSpeechEventSchema.safeParse(data.event);
       if (error) {
+        // Ignore Bedrock's raw audio events (handled elsewhere in pipeline)
+        const rawEvent = data.event as any;
+        if (rawEvent?.type === 'audio') {
+          return;
+        }
+        // Log truly unknown events
         const unknownEvent = JSON.stringify(data.event).substring(0, 200);
         console.log('⚠️  Unknown event received:', unknownEvent);
-        await dispatchEvent(channel, {
-          event: 'error',
-          data: {
-            message: `Unknown event type received: ${unknownEvent}`,
-            type: 'SCHEMA_VALIDATION_ERROR',
-          },
-        });
         return;
       }
       if (!['audioInput'].includes(event.event)) {
@@ -179,7 +179,7 @@ export const processResponseStream = async (
           await enqueueAudioOutput(channel, jsonResponse.event.audioOutput.content);
         } else if (jsonResponse.event?.contentEnd && jsonResponse.event?.contentEnd?.type === 'AUDIO') {
           await forcePublishAudioOutput(channel);
-          stream.restartAudioInput();
+          // Don't restart audio input here - let it be lazy-initialized when user sends more audio
           await dispatchEvent(channel, {
             event: 'audioStop',
             data: {},

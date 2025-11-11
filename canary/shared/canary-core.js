@@ -85,11 +85,6 @@ async function runTwoTurnConversation({ channel, audioChunks1, audioChunks2, tes
               turn2Start = Date.now();
               channel.publish({ direction: 'ctob', event: 'audioInput', data: { blobs: audioChunks2, sequence: 1 } });
               console.log(`[${testId}] Turn 2 audio sent`);
-              // Give Bedrock time to process audio before signaling end
-              setTimeout(() => {
-                channel.publish({ direction: 'ctob', event: 'endAudioInput', data: {} });
-                console.log(`[${testId}] endAudioInput sent`);
-              }, 2000); // Wait 2s for Bedrock to process
               responseTimeout = setTimeout(() => reject(new Error('Turn 2 timeout')), 30000);
             }, 2000);
           } else if (state === 'turn2') {

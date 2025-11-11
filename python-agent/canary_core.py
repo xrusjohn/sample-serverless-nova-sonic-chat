@@ -207,11 +207,16 @@ async def run_two_turn_test(
                         break
                     elif event_type == 'contentEnd':
                         content_type = data['event']['contentEnd'].get('type')
-                        print(f"[CANARY:T{current_turn}] contentEnd({content_type})")
+                        if content_type == 'AUDIO' and len(turn1_audio) > 0:
+                            total_bytes = sum(len(base64.b64decode(chunk)) for chunk in turn1_audio)
+                            samples = total_bytes / 2
+                            duration_sec = samples / 24000
+                            print(f"[CANARY:T{current_turn}] contentEnd(AUDIO) - {len(turn1_audio)} chunks, {duration_sec:.2f}s")
+                        else:
+                            print(f"[CANARY:T{current_turn}] contentEnd({content_type})")
                         if content_type == 'AUDIO':
                             if audio_ended:
-                                # Second audio end without completionEnd - use this as fallback
-                                print(f"[CANARY:T{current_turn}] Second contentEnd(AUDIO) - turn complete: {len(turn1_audio)} audio chunks")
+                                print(f"[CANARY:T{current_turn}] Second contentEnd(AUDIO) - turn complete")
                                 break
                             audio_ended = True
                     elif event_type == 'audioOutput':
@@ -365,13 +370,17 @@ async def run_two_turn_test(
                         break
                     elif event_type == 'contentEnd':
                         content_type = data['event']['contentEnd'].get('type')
-                        print(f"[CANARY:T{current_turn}] contentEnd({content_type})")
+                        if content_type == 'AUDIO' and len(turn2_audio) > 0:
+                            total_bytes = sum(len(base64.b64decode(chunk)) for chunk in turn2_audio)
+                            samples = total_bytes / 2
+                            duration_sec = samples / 24000
+                            print(f"[CANARY:T{current_turn}] contentEnd(AUDIO) - {len(turn2_audio)} chunks, {duration_sec:.2f}s")
+                        else:
+                            print(f"[CANARY:T{current_turn}] contentEnd({content_type})")
                         if content_type == 'AUDIO':
                             if audio_ended:
-                                # Second audio end - turn complete
-                                print(f"[CANARY:T{current_turn}] Second contentEnd(AUDIO) - turn complete: {len(turn2_audio)} audio chunks")
+                                print(f"[CANARY:T{current_turn}] Second contentEnd(AUDIO) - turn complete")
                                 break
-                            # First audio end - mark it but keep collecting
                             audio_ended = True
                     elif event_type == 'audioOutput':
                         turn2_audio.append(data['event']['audioOutput']['content'])

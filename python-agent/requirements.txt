@@ -1,0 +1,3 @@
+boto3>=1.34.0
+aws-sdk-bedrock-runtime
+smithy-aws-core

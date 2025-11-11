@@ -4,3 +4,7 @@ node_modules
 **/node_modules
 canary/recordings/
 recordings/
+*.wav
+*.mp3
+*.pcm
+*.raw

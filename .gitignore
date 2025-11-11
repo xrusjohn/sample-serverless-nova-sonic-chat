@@ -8,3 +8,11 @@ recordings/
 *.mp3
 *.pcm
 *.raw
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.so
+**/venv/
+**/.venv/
+.venv

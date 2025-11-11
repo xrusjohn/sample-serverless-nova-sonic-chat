@@ -77,6 +77,19 @@ def print_results(result: dict):
         print(f"Error: {result['error']}")
     print("="*60)
     
+    # Show transcript first (most important)
+    if result['transcript']:
+        print("\n💬 Conversation:")
+        for entry in result['transcript']:
+            turn_num = entry['turn']
+            user_text = entry.get('user', '')
+            assistant_text = entry.get('assistant', '')
+            print(f"  Turn {turn_num}:")
+            if user_text:
+                print(f"    User: {user_text}")
+            if assistant_text:
+                print(f"    Assistant: {assistant_text}")
+    
     metrics = result['metrics']
     print("\n📊 Timing Metrics:")
     print(f"  Total Time:           {metrics.get('total_time', 0):.0f} ms")
@@ -93,12 +106,6 @@ def print_results(result: dict):
     print(f"    - Receive Time:     {metrics.get('turn2_receive_time', 0):.0f} ms")
     print()
     print(f"  Audio Chunks Received: {metrics.get('audio_chunks_received', 0)}")
-    
-    if result['transcript']:
-        print("\n📝 Transcript:")
-        for entry in result['transcript']:
-            print(f"  Turn {entry['turn']}: {entry['text'][:100]}...")
-    
     print()
 
 

@@ -7,6 +7,7 @@ import asyncio
 import websockets
 import json
 import time
+import base64
 from typing import Dict, List, Any, Optional
 
 
@@ -47,11 +48,14 @@ async def run_two_turn_test(
     
     try:
         # Connect to WebSocket
+        print(f"[CANARY] Connecting to {ws_url}...")
         connect_start = time.time()
         async with websockets.connect(ws_url) as ws:
             metrics['connect_time'] = (time.time() - connect_start) * 1000
+            print(f"[CANARY] Connected in {metrics['connect_time']:.0f}ms")
             
             # Send sessionStart
+            print("[CANARY] Sending sessionStart...")
             await ws.send(json.dumps({
                 "event": {
                     "sessionStart": {
@@ -65,8 +69,10 @@ async def run_two_turn_test(
             }))
             
             # Wait for ready
+            print("[CANARY] Waiting for ready...")
             response = await asyncio.wait_for(ws.recv(), timeout=30)
             data = json.loads(response)
+            print(f"[CANARY] Received: {list(data.get('event', {}).keys())}")
             if 'ready' not in data.get('event', {}):
                 return {
                     'success': False,
@@ -77,14 +83,12 @@ async def run_two_turn_test(
                     'transcript': []
                 }
             
-            # === TURN 1 ===
-            turn1_start = time.time()
-            
-            # Send promptStart
+            # Send promptStart ONCE for entire session
+            print("[CANARY] Sending promptStart...")
             await ws.send(json.dumps({
                 "event": {
                     "promptStart": {
-                        "promptName": "user-prompt-1",
+                        "promptName": "session-prompt",
                         "textOutputConfiguration": {"mediaType": "text/plain"},
                         "audioOutputConfiguration": {
                             "mediaType": "audio/lpcm",
@@ -99,14 +103,52 @@ async def run_two_turn_test(
                 }
             }))
             
-            # Send contentStart
+            # Send system prompt
+            print("[CANARY] Sending system prompt...")
             await ws.send(json.dumps({
                 "event": {
                     "contentStart": {
-                        "promptName": "user-prompt-1",
-                        "contentName": "audio-1",
+                        "promptName": "session-prompt",
+                        "contentName": "system-content",
+                        "type": "TEXT",
+                        "interactive": False,
+                        "role": "SYSTEM",
+                        "textInputConfiguration": {"mediaType": "text/plain"}
+                    }
+                }
+            }))
+            await ws.send(json.dumps({
+                "event": {
+                    "textInput": {
+                        "promptName": "session-prompt",
+                        "contentName": "system-content",
+                        "content": system_prompt
+                    }
+                }
+            }))
+            await ws.send(json.dumps({
+                "event": {
+                    "contentEnd": {
+                        "promptName": "session-prompt",
+                        "contentName": "system-content"
+                    }
+                }
+            }))
+            
+            # === TURN 1 ===
+            current_turn = 1
+            print(f"\n[CANARY] === Starting Turn {current_turn} ===")
+            turn1_start = time.time()
+            
+            # Send contentStart for turn 1
+            await ws.send(json.dumps({
+                "event": {
+                    "contentStart": {
+                        "promptName": "session-prompt",
+                        "contentName": "audio-turn1",
                         "type": "AUDIO",
                         "interactive": True,
+                        "role": "USER",
                         "audioInputConfiguration": {
                             "mediaType": "audio/lpcm",
                             "sampleRateHertz": 16000,
@@ -120,43 +162,31 @@ async def run_two_turn_test(
             }))
             
             # Send audio chunks
+            print(f"[CANARY] Sending {len(audio_chunks1)} audio chunks...")
             send_start = time.time()
             for chunk in audio_chunks1:
                 await ws.send(json.dumps({
                     "event": {
                         "audioInput": {
-                            "promptName": "user-prompt-1",
-                            "contentName": "audio-1",
+                            "promptName": "session-prompt",
+                            "contentName": "audio-turn1",
                             "content": chunk
                         }
                     }
                 }))
             
-            # Send contentEnd
-            await ws.send(json.dumps({
-                "event": {
-                    "contentEnd": {
-                        "promptName": "user-prompt-1",
-                        "contentName": "audio-1"
-                    }
-                }
-            }))
-            
-            # Send promptEnd
-            await ws.send(json.dumps({
-                "event": {
-                    "promptEnd": {
-                        "promptName": "user-prompt-1"
-                    }
-                }
-            }))
+            # DON'T send contentEnd yet - keep stream open for silence
             
             send_end = time.time()
             metrics['turn1_send_time'] = (send_end - send_start) * 1000
             
             # Collect turn 1 responses
+            print("[CANARY] Waiting for turn 1 responses...")
             first_response_time = None
-            turn1_text = []
+            turn1_user_text = []
+            turn1_assistant_text = []
+            audio_ended = False
+            empty_audio_after_main = False
             
             while True:
                 try:
@@ -168,12 +198,33 @@ async def run_two_turn_test(
                         first_response_time = time.time()
                         metrics['turn1_reasoning_time'] = (first_response_time - send_end) * 1000
                     
-                    if event_type == 'audioOutput':
+                    # Log all events to debug
+                    if event_type not in ['audioOutput', 'usageEvent']:
+                        print(f"[CANARY:T{current_turn}] event: {event_type}")
+                    
+                    if event_type == 'completionEnd':
+                        print(f"[CANARY:T{current_turn}] completionEnd - turn complete: {len(turn1_audio)} audio chunks")
+                        break
+                    elif event_type == 'contentEnd':
+                        content_type = data['event']['contentEnd'].get('type')
+                        print(f"[CANARY:T{current_turn}] contentEnd({content_type})")
+                        if content_type == 'AUDIO':
+                            if audio_ended:
+                                # Second audio end without completionEnd - use this as fallback
+                                print(f"[CANARY:T{current_turn}] Second contentEnd(AUDIO) - turn complete: {len(turn1_audio)} audio chunks")
+                                break
+                            audio_ended = True
+                    elif event_type == 'audioOutput':
                         turn1_audio.append(data['event']['audioOutput']['content'])
                     elif event_type == 'textOutput':
-                        turn1_text.append(data['event']['textOutput']['text'])
-                    elif event_type == 'audioStop':
-                        break
+                        role = data['event']['textOutput'].get('role', '').upper()
+                        text = data['event']['textOutput'].get('content', data['event']['textOutput'].get('text', ''))
+                        print(f"[CANARY:T{current_turn}] textOutput(role={role}): {text}")
+                        if role == 'ASSISTANT':
+                            turn1_assistant_text.append(text)
+                        elif role == 'USER':
+                            turn1_user_text.append(text)
+
                     
                 except asyncio.TimeoutError:
                     return {
@@ -189,42 +240,65 @@ async def run_two_turn_test(
             metrics['turn1_time'] = (turn1_end - turn1_start) * 1000
             metrics['turn1_receive_time'] = (turn1_end - first_response_time) * 1000
             
-            if turn1_text:
-                transcript.append({'turn': 1, 'text': ''.join(turn1_text)})
+            if turn1_user_text or turn1_assistant_text:
+                transcript.append({
+                    'turn': 1,
+                    'user': ''.join(turn1_user_text),
+                    'assistant': ''.join(turn1_assistant_text)
+                })
             
-            # Wait before turn 2
-            await asyncio.sleep(config.get('turn_delay', 2))
+            # Calculate audio duration: 24kHz, 16-bit, mono
+            total_bytes = sum(len(base64.b64decode(chunk)) for chunk in turn1_audio)
+            samples = total_bytes / 2  # 16-bit = 2 bytes per sample
+            audio_duration_sec = samples / 24000  # 24kHz sample rate
             
-            # === TURN 2 ===
-            turn2_start = time.time()
+            # Stream silence for audio duration + 2s buffer
+            silence_duration = audio_duration_sec + 2.0
+            print(f"[CANARY:T{current_turn}] Turn 1 complete, streaming {silence_duration:.1f}s silence (audio: {audio_duration_sec:.1f}s + 2s buffer)...")
             
-            # Send promptStart
+            # Generate silence: 16kHz, 16-bit, mono, 100ms chunks
+            silence_chunk_samples = int(16000 * 0.1)
+            silence_bytes = b'\x00' * (silence_chunk_samples * 2)
+            silence_b64 = base64.b64encode(silence_bytes).decode('ascii')
+            
+            # Stream calculated silence duration
+            num_chunks = int(silence_duration / 0.1)
+            for _ in range(num_chunks):
+                await ws.send(json.dumps({
+                    "event": {
+                        "audioInput": {
+                            "promptName": "session-prompt",
+                            "contentName": "audio-turn1",
+                            "content": silence_b64
+                        }
+                    }
+                }))
+                await asyncio.sleep(0.1)
+            
+            # NOW close turn 1 content
             await ws.send(json.dumps({
                 "event": {
-                    "promptStart": {
-                        "promptName": "user-prompt-2",
-                        "textOutputConfiguration": {"mediaType": "text/plain"},
-                        "audioOutputConfiguration": {
-                            "mediaType": "audio/lpcm",
-                            "sampleRateHertz": 24000,
-                            "sampleSizeBits": 16,
-                            "channelCount": 1,
-                            "voiceId": voice_id,
-                            "encoding": "base64",
-                            "audioType": "SPEECH"
-                        }
+                    "contentEnd": {
+                        "promptName": "session-prompt",
+                        "contentName": "audio-turn1"
                     }
                 }
             }))
             
-            # Send contentStart
+            # === TURN 2 ===
+            current_turn = 2
+            print(f"\n[CANARY] === Starting Turn {current_turn} ===")
+            turn2_start = time.time()
+            
+            # Send contentStart for turn 2
             await ws.send(json.dumps({
                 "event": {
                     "contentStart": {
-                        "promptName": "user-prompt-2",
-                        "contentName": "audio-2",
+                        "promptName": "session-prompt",
+                        "contentName": "audio-turn2",
                         "type": "AUDIO",
                         "interactive": True,
+                        "role": "USER",
                         "audioInputConfiguration": {
                             "mediaType": "audio/lpcm",
                             "sampleRateHertz": 16000,
@@ -238,33 +312,25 @@ async def run_two_turn_test(
             }))
             
             # Send audio chunks
+            print(f"[CANARY] Sending {len(audio_chunks2)} audio chunks...")
             send_start = time.time()
             for chunk in audio_chunks2:
                 await ws.send(json.dumps({
                     "event": {
                         "audioInput": {
-                            "promptName": "user-prompt-2",
-                            "contentName": "audio-2",
+                            "promptName": "session-prompt",
+                            "contentName": "audio-turn2",
                             "content": chunk
                         }
                     }
                 }))
             
-            # Send contentEnd
+            # Send contentEnd for turn 2
             await ws.send(json.dumps({
                 "event": {
                     "contentEnd": {
-                        "promptName": "user-prompt-2",
-                        "contentName": "audio-2"
-                    }
-                }
-            }))
-            
-            # Send promptEnd
-            await ws.send(json.dumps({
-                "event": {
-                    "promptEnd": {
-                        "promptName": "user-prompt-2"
+                        "promptName": "session-prompt",
+                        "contentName": "audio-turn2"
                     }
                 }
             }))
@@ -273,8 +339,12 @@ async def run_two_turn_test(
             metrics['turn2_send_time'] = (send_end - send_start) * 1000
             
             # Collect turn 2 responses
+            print("[CANARY] Waiting for turn 2 responses...")
             first_response_time = None
-            turn2_text = []
+            turn2_user_text = []
+            turn2_assistant_text = []
+            audio_ended = False
+            empty_audio_after_main = False
             
             while True:
                 try:
@@ -286,12 +356,36 @@ async def run_two_turn_test(
                         first_response_time = time.time()
                         metrics['turn2_reasoning_time'] = (first_response_time - send_end) * 1000
                     
-                    if event_type == 'audioOutput':
+                    # Log all events to debug
+                    if event_type not in ['audioOutput', 'usageEvent']:
+                        print(f"[CANARY:T{current_turn}] event: {event_type}")
+                    
+                    if event_type == 'completionEnd':
+                        print(f"[CANARY:T{current_turn}] completionEnd - turn complete: {len(turn2_audio)} audio chunks")
+                        break
+                    elif event_type == 'contentEnd':
+                        content_type = data['event']['contentEnd'].get('type')
+                        print(f"[CANARY:T{current_turn}] contentEnd({content_type})")
+                        if content_type == 'AUDIO':
+                            if audio_ended:
+                                # Second audio end - turn complete
+                                print(f"[CANARY:T{current_turn}] Second contentEnd(AUDIO) - turn complete: {len(turn2_audio)} audio chunks")
+                                break
+                            # First audio end - for Turn 2, this is enough
+                            audio_ended = True
+                            print(f"[CANARY:T{current_turn}] First contentEnd(AUDIO) - turn complete: {len(turn2_audio)} audio chunks")
+                            break
+                    elif event_type == 'audioOutput':
                         turn2_audio.append(data['event']['audioOutput']['content'])
                     elif event_type == 'textOutput':
-                        turn2_text.append(data['event']['textOutput']['text'])
-                    elif event_type == 'audioStop':
-                        break
+                        role = data['event']['textOutput'].get('role', '').upper()
+                        text = data['event']['textOutput'].get('content', data['event']['textOutput'].get('text', ''))
+                        print(f"[CANARY:T{current_turn}] textOutput(role={role}): {text}")
+                        if role == 'ASSISTANT':
+                            turn2_assistant_text.append(text)
+                        elif role == 'USER':
+                            turn2_user_text.append(text)
+
                     
                 except asyncio.TimeoutError:
                     return {
@@ -307,11 +401,27 @@ async def run_two_turn_test(
             metrics['turn2_time'] = (turn2_end - turn2_start) * 1000
             metrics['turn2_receive_time'] = (turn2_end - first_response_time) * 1000
             
-            if turn2_text:
-                transcript.append({'turn': 2, 'text': ''.join(turn2_text)})
+            if turn2_user_text or turn2_assistant_text:
+                transcript.append({
+                    'turn': 2,
+                    'user': ''.join(turn2_user_text),
+                    'assistant': ''.join(turn2_assistant_text)
+                })
+            
+            # Send promptEnd ONCE at end of session
+            print("[CANARY] Sending promptEnd...")
+            await ws.send(json.dumps({
+                "event": {
+                    "promptEnd": {
+                        "promptName": "session-prompt"
+                    }
+                }
+            }))
             
             # Send sessionEnd
+            print("[CANARY] Sending sessionEnd...")
             await ws.send(json.dumps({"event": {"sessionEnd": {}}}))
+            print("[CANARY] ✅ Test complete!")
             
             # Calculate total time
             metrics['total_time'] = (time.time() - start_time) * 1000

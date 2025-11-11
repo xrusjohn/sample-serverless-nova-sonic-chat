@@ -4,34 +4,14 @@ import boto3
 import asyncio
 from typing import Dict, Any
 from s2s_session_manager_full import S2sSessionManager
+from s2s_events import S2sEvent
 
 dynamodb = boto3.resource('dynamodb')
 table = dynamodb.Table(os.environ['TABLE_NAME'])
 bedrock_region = os.environ['BEDROCK_REGION']
 
-# API Gateway Management API client (initialized per request)
-apigw_client = None
-
-# Active sessions (connection_id -> SessionManager)
-active_sessions = {}
-
-# Background task to forward responses to WebSocket
-async def forward_to_websocket(connection_id: str, session: S2sSessionManager):
-    """Forward Bedrock responses to WebSocket client"""
-    try:
-        while session.is_active:
-            response = await session.output_queue.get()
-            try:
-                apigw_client.post_to_connection(
-                    ConnectionId=connection_id,
-                    Data=json.dumps(response).encode('utf-8')
-                )
-            except apigw_client.exceptions.GoneException:
-                print(f"Connection {connection_id} gone")
-                session.is_active = False
-                break
-    except Exception as e:
-        print(f"Error forwarding: {e}")
+# Session cache - survives across Lambda invocations in same container
+sessions = {}
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
@@ -75,12 +55,10 @@ def handle_disconnect(connection_id: str) -> Dict[str, Any]:
 
 def handle_message(connection_id: str, event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
-    Handle incoming messages and stream Bedrock responses.
-    Message format: {"event": {"sessionStart": {...}}, ...}
+    Handle incoming messages. Each message is a separate Lambda invocation.
+    Sessions are cached in module-level dict to survive across invocations.
     """
     try:
-        # Initialize API Gateway Management API client
-        global apigw_client, active_sessions
         domain_name = event['requestContext']['domainName']
         stage = event['requestContext']['stage']
         apigw_client = boto3.client(
@@ -88,56 +66,83 @@ def handle_message(connection_id: str, event: Dict[str, Any], context: Any) -> D
             endpoint_url=f"https://{domain_name}/{stage}"
         )
         
-        # Parse message
         body = json.loads(event.get('body', '{}'))
-        print(f"Received message: {json.dumps(body)[:200]}")
+        event_type = list(body.get('event', {}).keys())[0] if body.get('event') else None
+        print(f"Event: {event_type}")
         
-        # Handle different event types
-        if 'event' in body:
-            event_type = list(body['event'].keys())[0]
-            
-            if event_type == 'sessionStart':
-                # Create new session
-                session = S2sSessionManager(region=bedrock_region)
-                active_sessions[connection_id] = session
-                
-                # Initialize stream and start forwarding
-                async def start():
-                    await session.initialize_stream()
-                    # Send ready event
-                    apigw_client.post_to_connection(
-                        ConnectionId=connection_id,
-                        Data=json.dumps({'event': {'ready': {}}, 'timestamp': 0}).encode('utf-8')
-                    )
-                    # Start forwarding responses
-                    asyncio.create_task(forward_to_websocket(connection_id, session))
-                
-                asyncio.run(start())
-                
-            elif event_type == 'audioInput':
-                # Add audio to session
-                if connection_id in active_sessions:
-                    audio_event = body['event']['audioInput']
-                    session = active_sessions[connection_id]
-                    session.add_audio_chunk(
-                        audio_event['promptName'],
-                        audio_event['contentName'],
-                        audio_event['content']
-                    )
-                    
-            elif event_type == 'sessionEnd':
-                # End session
-                if connection_id in active_sessions:
-                    session = active_sessions[connection_id]
-                    asyncio.run(session.close())
-                    del active_sessions[connection_id]
+        if event_type == 'sessionStart':
+            asyncio.run(handle_session_start(connection_id, body, apigw_client))
+        elif connection_id in sessions:
+            asyncio.run(handle_stream_event(connection_id, body, apigw_client))
         
-        return {'statusCode': 200, 'body': 'Message processed'}
+        return {'statusCode': 200, 'body': 'OK'}
     
     except Exception as e:
-        print(f"Error handling message: {e}")
+        print(f"Error: {e}")
         import traceback
         traceback.print_exc()
         return {'statusCode': 500, 'body': str(e)}
 
+async def handle_session_start(connection_id: str, event_data: Dict, apigw_client):
+    """Initialize Bedrock session and cache it"""
+    session = S2sSessionManager(region=bedrock_region)
+    await session.initialize_stream()
+    sessions[connection_id] = session
+    
+    # Send to Bedrock
+    await session.send_raw_event(event_data)
+    
+    # Send ready to client
+    apigw_client.post_to_connection(
+        ConnectionId=connection_id,
+        Data=json.dumps({'event': {'ready': {}}, 'timestamp': 0}).encode('utf-8')
+    )
+    
+    # Forward any immediate responses
+    await forward_available_responses(connection_id, session, apigw_client)
 
+async def handle_stream_event(connection_id: str, event_data: Dict, apigw_client):
+    """Forward event to cached Bedrock session"""
+    session = sessions[connection_id]
+    await session.send_raw_event(event_data)
+    
+    event_type = list(event_data.get('event', {}).keys())[0]
+    
+    # After promptEnd, wait longer for all audio responses
+    if event_type == 'promptEnd':
+        await forward_available_responses(connection_id, session, apigw_client, timeout=10.0)
+    else:
+        # For other events, just drain immediate responses
+        await forward_available_responses(connection_id, session, apigw_client, timeout=0.5)
+    
+    # Clean up on sessionEnd
+    if event_type == 'sessionEnd':
+        await session.close()
+        del sessions[connection_id]
+
+async def forward_available_responses(connection_id: str, session: S2sSessionManager, apigw_client, timeout: float = 0.1):
+    """Forward all available responses from queue before Lambda returns"""
+    deadline = asyncio.get_event_loop().time() + timeout
+    
+    while asyncio.get_event_loop().time() < deadline and session.is_active:
+        try:
+            remaining = deadline - asyncio.get_event_loop().time()
+            if remaining <= 0:
+                break
+            
+            response = await asyncio.wait_for(session.output_queue.get(), timeout=remaining)
+            
+            apigw_client.post_to_connection(
+                ConnectionId=connection_id,
+                Data=json.dumps(response).encode('utf-8')
+            )
+            
+        except asyncio.TimeoutError:
+            break
+        except apigw_client.exceptions.GoneException:
+            print(f"Connection gone")
+            session.is_active = False
+            break
+        except Exception as e:
+            print(f"Error forwarding: {e}")
+            break

@@ -1,0 +1,13 @@
+{
+  "connect_time": 19.931316375732422,
+  "turn1_send_time": 9.951591491699219,
+  "turn1_reasoning_time": 0.3578662872314453,
+  "turn1_time": 311.89775466918945,
+  "turn1_receive_time": 301.4109134674072,
+  "turn2_send_time": 11.008977890014648,
+  "turn2_reasoning_time": 0.36263465881347656,
+  "turn2_time": 313.1282329559326,
+  "turn2_receive_time": 301.2678623199463,
+  "total_time": 2647.7839946746826,
+  "audio_chunks_received": 6
+}

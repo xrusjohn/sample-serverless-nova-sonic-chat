@@ -15,7 +15,6 @@ try:
     from aws_sdk_bedrock_runtime.client import BedrockRuntimeClient, InvokeModelWithBidirectionalStreamOperationInput
     from aws_sdk_bedrock_runtime.models import InvokeModelWithBidirectionalStreamInputChunk, BidirectionalInputPayloadPart
     from aws_sdk_bedrock_runtime.config import Config
-    from smithy_aws_core.identity.environment import EnvironmentCredentialsResolver
     HAS_CUSTOM_SDK = True
 except ImportError:
     HAS_CUSTOM_SDK = False
@@ -47,7 +46,9 @@ class S2sSessionManager:
         """Initialize the Bedrock client."""
         if not HAS_CUSTOM_SDK:
             raise ImportError("Custom Bedrock SDK not installed")
-            
+        
+        from smithy_aws_core.identity.environment import EnvironmentCredentialsResolver
+        
         config = Config(
             endpoint_uri=f"https://bedrock-runtime.{self.region}.amazonaws.com",
             region=self.region,
@@ -57,22 +58,29 @@ class S2sSessionManager:
 
     async def initialize_stream(self):
         """Initialize the bidirectional stream with Bedrock."""
+        print("[SESSION] Initializing client...")
         if not self.bedrock_client:
             self._initialize_client()
+        print("[SESSION] Client initialized")
 
         # Initialize the stream
+        print("[SESSION] Opening bidirectional stream...")
         self.stream = await self.bedrock_client.invoke_model_with_bidirectional_stream(
             InvokeModelWithBidirectionalStreamOperationInput(model_id=self.model_id)
         )
+        print("[SESSION] Stream opened")
         self.is_active = True
         
         # Start listening for responses
+        print("[SESSION] Starting response processor...")
         self.response_task = asyncio.create_task(self._process_responses())
         
         # Start processing audio input
+        print("[SESSION] Starting audio input processor...")
         asyncio.create_task(self._process_audio_input())
         
         await asyncio.sleep(0.1)
+        print("[SESSION] Initialization complete")
         return self
     
     async def send_raw_event(self, event_data):
@@ -141,9 +149,12 @@ class S2sSessionManager:
             except json.JSONDecodeError as ex:
                 print(f"JSON decode error: {ex}")
             except StopAsyncIteration:
+                print("[SESSION] Bedrock stream ended")
                 break
             except Exception as e:
-                print(f"Error receiving response: {e}")
+                # Suppress expected cleanup errors
+                if "CANCELLED" not in str(e) and "InvalidStateError" not in str(e):
+                    print(f"Error receiving response: {e}")
                 break
 
         self.is_active = False
@@ -172,8 +183,13 @@ class S2sSessionManager:
         if self.stream:
             try:
                 await self.stream.input_stream.close()
+                print("[SESSION] Bedrock stream closed gracefully")
             except Exception as e:
-                print(f"Error closing stream: {e}")
+                # AWS CRT cleanup errors during shutdown are expected
+                if "CANCELLED" in str(e) or "InvalidStateError" in str(e):
+                    print("[SESSION] Bedrock connection closed (cleanup complete)")
+                else:
+                    print(f"[SESSION] Warning during stream close: {e}")
         
         if self.response_task and not self.response_task.done():
             self.response_task.cancel()

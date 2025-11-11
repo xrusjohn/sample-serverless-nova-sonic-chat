@@ -27,11 +27,19 @@ export class SonicAgentPythonStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
-    // Python Lambda handler
+    // Python Lambda handler with bundled dependencies
     this.handler = new lambda.Function(this, 'AgentHandler', {
       runtime: lambda.Runtime.PYTHON_3_12,
       handler: 'handler.lambda_handler',
-      code: lambda.Code.fromAsset('../python-agent'),
+      code: lambda.Code.fromAsset('../python-agent', {
+        bundling: {
+          image: lambda.Runtime.PYTHON_3_12.bundlingImage,
+          command: [
+            'bash', '-c',
+            'pip install -r requirements.txt -t /asset-output && cp -au . /asset-output'
+          ],
+        },
+      }),
       timeout: cdk.Duration.minutes(15),
       memorySize: 1024,
       environment: {

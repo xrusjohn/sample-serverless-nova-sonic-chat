@@ -371,10 +371,8 @@ async def run_two_turn_test(
                                 # Second audio end - turn complete
                                 print(f"[CANARY:T{current_turn}] Second contentEnd(AUDIO) - turn complete: {len(turn2_audio)} audio chunks")
                                 break
-                            # First audio end - for Turn 2, this is enough
+                            # First audio end - mark it but keep collecting
                             audio_ended = True
-                            print(f"[CANARY:T{current_turn}] First contentEnd(AUDIO) - turn complete: {len(turn2_audio)} audio chunks")
-                            break
                     elif event_type == 'audioOutput':
                         turn2_audio.append(data['event']['audioOutput']['content'])
                     elif event_type == 'textOutput':

@@ -1,9 +1,6 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { ContinuousAudioStream } from './agent/continuous-audio-stream';
 import { NovaStream } from './agent/nova-stream';
-import { CloudWatchClient, PutMetricDataCommand } from '@aws-sdk/client-cloudwatch';
-
-const cloudwatch = new CloudWatchClient({});
 
 export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
   console.log('🎯 Streaming agent invoked:', JSON.stringify(event, null, 2));
@@ -32,30 +29,48 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
       // Create continuous audio stream
       const continuousStream = new ContinuousAudioStream(novaStream);
       
-      // Generate test audio files (simulate continuous microphone)
-      const testAudioPaths = [
-        '/tmp/test-audio-1.raw',
-        '/tmp/test-audio-2.raw'
-      ];
-      
-      // Create test audio files (16kHz, 16-bit, mono, 2 seconds each)
-      const fs = require('fs');
-      const sampleRate = 16000;
-      const duration = 2; // seconds
-      const samples = sampleRate * duration;
-      
-      for (let i = 0; i < testAudioPaths.length; i++) {
-        const audioBuffer = Buffer.alloc(samples * 2); // 16-bit = 2 bytes per sample
-        // Generate simple tone for testing
-        for (let j = 0; j < samples; j++) {
-          const value = Math.sin(2 * Math.PI * (440 + i * 100) * j / sampleRate) * 16000;
-          audioBuffer.writeInt16LE(Math.round(value), j * 2);
+      if (audioFiles && audioFiles.length > 0) {
+        // Use provided audio files
+        console.log(`📁 Processing ${audioFiles.length} provided audio files`);
+        const testAudioPaths = [];
+        
+        for (let i = 0; i < audioFiles.length; i++) {
+          const audioFile = audioFiles[i];
+          const filePath = `/tmp/streaming-audio-${i}.raw`;
+          
+          // Decode base64 audio data and write to file
+          const audioBuffer = Buffer.from(audioFile.data, 'base64');
+          require('fs').writeFileSync(filePath, audioBuffer);
+          testAudioPaths.push(filePath);
+          
+          console.log(`📄 Saved audio file: ${audioFile.name} (${audioBuffer.length} bytes)`);
         }
-        fs.writeFileSync(testAudioPaths[i], audioBuffer);
+        
+        // Load audio files into continuous stream
+        continuousStream.loadAudioFiles(testAudioPaths);
+      } else {
+        // Generate test audio files (fallback)
+        console.log('🎵 Generating test audio files...');
+        const testAudioPaths = ['/tmp/test-audio-1.raw', '/tmp/test-audio-2.raw'];
+        
+        const fs = require('fs');
+        const sampleRate = 16000;
+        const audioDuration = 2; // seconds
+        const samples = sampleRate * audioDuration;
+        
+        for (let i = 0; i < testAudioPaths.length; i++) {
+          const audioBuffer = Buffer.alloc(samples * 2); // 16-bit = 2 bytes per sample
+          // Generate simple tone for testing
+          for (let j = 0; j < samples; j++) {
+            const value = Math.sin(2 * Math.PI * (440 + i * 100) * j / sampleRate) * 16000;
+            audioBuffer.writeInt16LE(Math.round(value), j * 2);
+          }
+          fs.writeFileSync(testAudioPaths[i], audioBuffer);
+        }
+        
+        // Load audio files into continuous stream
+        continuousStream.loadAudioFiles(testAudioPaths);
       }
-      
-      // Load audio files into continuous stream
-      continuousStream.loadAudioFiles(testAudioPaths);
       
       // Start continuous streaming
       console.log('🎤 Starting continuous audio streaming...');
@@ -69,9 +84,9 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
       novaStream.terminate();
       
       // Publish metrics
-      const duration = Date.now() - startTime;
-      await publishMetrics('StreamingSessionDuration', duration, sessionId);
-      await publishMetrics('StreamingSessionSuccess', 1, sessionId);
+      const sessionDuration = Date.now() - startTime;
+      console.log(`✓ Streaming session duration: ${sessionDuration}ms`);
+      console.log(`✓ Audio files processed: ${audioFiles?.length || 2}`);
       
       console.log('✅ Streaming session completed');
       
@@ -86,7 +101,7 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
           sessionId,
           message: 'Streaming session completed',
           streamingMode: true,
-          duration,
+          duration: sessionDuration,
           audioFilesProcessed: audioFiles?.length || 2,
         }),
       };
@@ -107,9 +122,8 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
   } catch (error) {
     console.error('❌ Streaming agent error:', error);
     
-    const duration = Date.now() - startTime;
-    await publishMetrics('StreamingSessionDuration', duration, 'error');
-    await publishMetrics('StreamingSessionError', 1, 'error');
+    const errorDuration = Date.now() - startTime;
+    console.log(`✓ Error duration: ${errorDuration}ms`);
     
     return {
       statusCode: 500,
@@ -124,23 +138,3 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
     };
   }
 };
-
-async function publishMetrics(metricName: string, value: number, sessionId: string) {
-  try {
-    await cloudwatch.send(new PutMetricDataCommand({
-      Namespace: 'StreamingSonicCanary',
-      MetricData: [
-        {
-          MetricName: metricName,
-          Value: value,
-          Unit: metricName.includes('Duration') ? 'Milliseconds' : 'Count',
-          Dimensions: [{ Name: 'SessionId', Value: sessionId }],
-          Timestamp: new Date()
-        }
-      ]
-    }));
-    console.log(`✓ Published ${metricName}=${value}`);
-  } catch (error) {
-    console.error(`Failed to publish metric ${metricName}:`, error);
-  }
-}

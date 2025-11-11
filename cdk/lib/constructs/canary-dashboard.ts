@@ -1,27 +1,30 @@
 import { Dashboard, GraphWidget, Metric, SingleValueWidget, MathExpression } from 'aws-cdk-lib/aws-cloudwatch';
+import { Duration } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 
 export class CanaryDashboard extends Construct {
   constructor(scope: Construct, id: string) {
     super(scope, id);
 
-    const dashboard = new Dashboard(this, 'Dashboard', {
-      dashboardName: 'SonicCanary',
+    const dashboard = new Dashboard(this, 'DashboardV2', {
+      dashboardName: 'SonicCanaryV2',
     });
 
     const successRate = new Metric({
       namespace: 'SonicCanary',
-      metricName: 'CanarySuccess',
+      metricName: 'SonicCanarySuccess',
       statistic: 'Average',
     });
 
-    const totalTime = new Metric({ namespace: 'SonicCanary', metricName: 'CanaryTotalTime', statistic: 'Average' });
-    const turn1Time = new Metric({ namespace: 'SonicCanary', metricName: 'CanaryTurn1Time', statistic: 'Average' });
-    const turn2Time = new Metric({ namespace: 'SonicCanary', metricName: 'CanaryTurn2Time', statistic: 'Average' });
-    const audioLoadTime = new Metric({ namespace: 'SonicCanary', metricName: 'CanaryAudioLoadTime', statistic: 'Average' });
-    const channelConnectTime = new Metric({ namespace: 'SonicCanary', metricName: 'CanaryChannelConnectTime', statistic: 'Average' });
-    const agentInvokeTime = new Metric({ namespace: 'SonicCanary', metricName: 'CanaryAgentInvokeTime', statistic: 'Average' });
-    const readyWaitTime = new Metric({ namespace: 'SonicCanary', metricName: 'CanaryReadyWaitTime', statistic: 'Average' });
+    const totalTime = new Metric({ namespace: 'SonicCanary', metricName: 'SonicCanaryTotalTime', statistic: 'Average' });
+    const conversationDuration = new Metric({ namespace: 'SonicCanary', metricName: 'SonicCanaryConversationDuration', statistic: 'Average' });
+    const totalReasoningLatency = new Metric({ namespace: 'SonicCanary', metricName: 'SonicCanaryTotalReasoningLatency', statistic: 'Average' });
+    const audioLoadTime = new Metric({ namespace: 'SonicCanary', metricName: 'SonicCanaryAudioLoadTime', statistic: 'Average' });
+    const turn1Time = new Metric({ namespace: 'SonicCanary', metricName: 'SonicCanaryTurn1Time', statistic: 'Average' });
+    const turn2Time = new Metric({ namespace: 'SonicCanary', metricName: 'SonicCanaryTurn2Time', statistic: 'Average' });
+    const channelConnectTime = new Metric({ namespace: 'SonicCanary', metricName: 'SonicCanaryChannelConnectTime', statistic: 'Average' });
+    const agentInvokeTime = new Metric({ namespace: 'SonicCanary', metricName: 'SonicCanaryAgentInvokeTime', statistic: 'Average' });
+    const readyWaitTime = new Metric({ namespace: 'SonicCanary', metricName: 'SonicCanaryReadyWaitTime', statistic: 'Average' });
 
     // Streaming Canary metrics
     const streamingSuccessRate = new Metric({
@@ -80,6 +83,20 @@ export class CanaryDashboard extends Construct {
       namespace: 'AWS/Bedrock',
       metricName: 'InvocationLatency',
       statistic: 'Average',
+      dimensionsMap: { ModelId: 'amazon.nova-sonic-v1:0' },
+    });
+
+    const bedrockThrottles = new Metric({
+      namespace: 'AWS/Bedrock',
+      metricName: 'InvocationThrottles',
+      statistic: 'Sum',
+      dimensionsMap: { ModelId: 'amazon.nova-sonic-v1:0' },
+    });
+
+    const bedrockServerErrors = new Metric({
+      namespace: 'AWS/Bedrock',
+      metricName: 'InvocationServerErrors',
+      statistic: 'Sum',
       dimensionsMap: { ModelId: 'amazon.nova-sonic-v1:0' },
     });
 
@@ -157,6 +174,7 @@ export class CanaryDashboard extends Construct {
         left: [streamingTurn1SendTime, streamingTurn1ReasoningTime, streamingTurn1ReceiveTime],
         width: 12,
         height: 6,
+        stacked: true,
       })
     );
 
@@ -166,6 +184,7 @@ export class CanaryDashboard extends Construct {
         left: [audioLoadTime, channelConnectTime, agentInvokeTime, readyWaitTime],
         width: 12,
         height: 6,
+        stacked: true,
       }),
       new GraphWidget({
         title: 'Nova Sonic Reasoning Latency',
@@ -198,19 +217,26 @@ export class CanaryDashboard extends Construct {
         height: 6,
       }),
       new GraphWidget({
-        title: 'Bedrock Client Errors',
-        left: [bedrockErrors],
+        title: 'Bedrock Error Breakdown',
+        left: [bedrockErrors, bedrockThrottles, bedrockServerErrors],
         width: 12,
         height: 6,
+        stacked: true,
       })
     );
 
-    // Row 7: Bedrock Latency
+    // Row 7: Duration and Latency Comparison
     dashboard.addWidgets(
       new GraphWidget({
-        title: 'Bedrock Invocation Latency',
-        left: [bedrockLatency],
-        width: 24,
+        title: 'Conversation Duration: Canary vs Bedrock',
+        left: [conversationDuration, bedrockLatency],
+        width: 12,
+        height: 6,
+      }),
+      new GraphWidget({
+        title: 'Nova Sonic Reasoning Latency',
+        left: [totalReasoningLatency],
+        width: 12,
         height: 6,
       })
     );

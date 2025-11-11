@@ -13,6 +13,7 @@ exports.handler = async (event) => {
     const file2 = process.env.STREAMING_AUDIO_FILE2 || 'good_morning_nova.wav';
     
     console.log(`📁 Loading audio files: ${file1}, ${file2}`);
+    const audioLoadStart = Date.now();
     const audioFiles = [];
     
     try {
@@ -29,13 +30,18 @@ exports.handler = async (event) => {
       audioFiles.push(audioFile2);
       console.log(`✓ Loaded ${file2} (${audioFile2.length} chunks)`);
     } catch (e) {
-      console.log(`⚠️  Could not load second file: ${e.message}`);
+      console.error('❌ Error loading second audio file:', e.message);
+      throw e;
     }
+    
+    const audioLoadTime = Date.now() - audioLoadStart;
+    console.log(`✓ Audio files loaded in ${audioLoadTime}ms`);
     
     console.log(`🚀 Starting bidirectional conversation...`);
     const result = await core.streamToAgent(sessionId, audioFiles, {
       voiceId: process.env.VOICE_ID || 'tiffany',
-      systemPrompt: process.env.SYSTEM_PROMPT || 'You are a helpful assistant. Please respond briefly.'
+      systemPrompt: process.env.SYSTEM_PROMPT || 'You are a helpful assistant. Please respond briefly.',
+      audioLoadTime
     });
     
     console.log('📨 Final result:', result);

@@ -21,7 +21,7 @@ class StreamingCore {
       {
         API: {
           Events: {
-            endpoint: `${process.env.EVENT_API_ENDPOINT || 'https://zqq4vqxo35bpfhkgbcu7lwsrbq.appsync-api.us-east-1.amazonaws.com'}/event`,
+            endpoint: `${process.env.EVENT_API_ENDPOINT || 'https://6okdb2chbnetdmam3rgmbvmh6m.appsync-api.us-east-1.amazonaws.com'}/event`,
             region: 'us-east-1',
             defaultAuthMode: 'iam',
           },
@@ -61,7 +61,7 @@ class StreamingCore {
   async publishMetrics(metricName, value, testId) {
     try {
       await this.cloudwatch.send(new PutMetricDataCommand({
-        Namespace: 'StreamingCanary',
+        Namespace: 'SonicCanary',
         MetricData: [
           {
             MetricName: metricName,
@@ -200,13 +200,14 @@ class StreamingCore {
       // Also save to S3 if bucket is configured
       const bucket = process.env.TRANSCRIPT_BUCKET;
       if (bucket) {
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
         await this.s3.send(new PutObjectCommand({
           Bucket: bucket,
-          Key: `transcripts/${sessionId}.json`,
-          Body: JSON.stringify(transcript, null, 2),
+          Key: `transcripts/${timestamp}/transcript.json`,
+          Body: JSON.stringify({ sessionId, timestamp: new Date().toISOString(), transcript }, null, 2),
           ContentType: 'application/json'
         }));
-        console.log(`☁️  Transcript uploaded to S3: s3://${bucket}/transcripts/${sessionId}.json`);
+        console.log(`☁️  Transcript uploaded to S3: s3://${bucket}/transcripts/${timestamp}/transcript.json`);
       }
     } catch (error) {
       console.error('❌ Error saving transcript:', error.message);
@@ -223,13 +224,14 @@ class StreamingCore {
       // Also save to S3 if bucket is configured
       const bucket = process.env.TRANSCRIPT_BUCKET;
       if (bucket) {
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
         await this.s3.send(new PutObjectCommand({
           Bucket: bucket,
-          Key: `metrics/${sessionId}.json`,
-          Body: JSON.stringify(metrics, null, 2),
+          Key: `metrics/${timestamp}/metrics.json`,
+          Body: JSON.stringify({ sessionId, timestamp: new Date().toISOString(), ...metrics }, null, 2),
           ContentType: 'application/json'
         }));
-        console.log(`☁️  Metrics uploaded to S3: s3://${bucket}/metrics/${sessionId}.json`);
+        console.log(`☁️  Metrics uploaded to S3: s3://${bucket}/metrics/${timestamp}/metrics.json`);
       }
     } catch (error) {
       console.error('❌ Error saving metrics:', error.message);
@@ -293,24 +295,42 @@ class StreamingCore {
       
       const sendNextTurn = async () => {
         if (currentTurn >= audioFiles.length) {
+          // Send terminateSession to cleanly close the agent
+          console.log('🛑 Sending terminateSession...');
+          await channel.publish({
+            direction: 'ctob',
+            event: 'terminateSession',
+            data: {}
+          });
+          
           const totalTime = Date.now() - startTime;
           
           // Publish metrics like existing canary
-          await this.publishMetrics('StreamingCanarySuccess', 1, sessionId);
-          await this.publishMetrics('StreamingCanaryTotalTime', totalTime, sessionId);
-          await this.publishMetrics('StreamingCanaryTurn1Time', turn1Time, sessionId);
-          await this.publishMetrics('StreamingCanaryTurn2Time', turn2Time, sessionId);
-          await this.publishMetrics('StreamingCanaryChannelConnectTime', channelConnectTime, sessionId);
-          await this.publishMetrics('StreamingCanaryAgentInvokeTime', agentInvokeTime, sessionId);
-          await this.publishMetrics('StreamingCanaryReadyWaitTime', readyWaitTime, sessionId);
+          await this.publishMetrics('SonicCanarySuccess', 1, sessionId);
+          await this.publishMetrics('SonicCanaryTotalTime', totalTime, sessionId);
+          await this.publishMetrics('SonicCanaryConversationDuration', totalTime, sessionId);
+          await this.publishMetrics('SonicCanaryTurn1Time', turn1Time, sessionId);
+          await this.publishMetrics('SonicCanaryTurn2Time', turn2Time, sessionId);
+          await this.publishMetrics('SonicCanaryChannelConnectTime', channelConnectTime, sessionId);
+          await this.publishMetrics('SonicCanaryAgentInvokeTime', agentInvokeTime, sessionId);
+          await this.publishMetrics('SonicCanaryReadyWaitTime', readyWaitTime, sessionId);
+          
+          // Audio load time (passed from handler)
+          if (config.audioLoadTime) {
+            await this.publishMetrics('SonicCanaryAudioLoadTime', config.audioLoadTime, sessionId);
+          }
           
           // Latency breakdown metrics
-          await this.publishMetrics('StreamingCanaryTurn1SendTime', turn1SendTime, sessionId);
-          await this.publishMetrics('StreamingCanaryTurn1ReasoningTime', turn1ReasoningTime, sessionId);
-          await this.publishMetrics('StreamingCanaryTurn1ReceiveTime', turn1ReceiveTime, sessionId);
-          await this.publishMetrics('StreamingCanaryTurn2SendTime', turn2SendTime, sessionId);
-          await this.publishMetrics('StreamingCanaryTurn2ReasoningTime', turn2ReasoningTime, sessionId);
-          await this.publishMetrics('StreamingCanaryTurn2ReceiveTime', turn2ReceiveTime, sessionId);
+          await this.publishMetrics('SonicCanaryTurn1SendTime', turn1SendTime, sessionId);
+          await this.publishMetrics('SonicCanaryTurn1ReasoningTime', turn1ReasoningTime, sessionId);
+          await this.publishMetrics('SonicCanaryTurn1ReceiveTime', turn1ReceiveTime, sessionId);
+          await this.publishMetrics('SonicCanaryTurn2SendTime', turn2SendTime, sessionId);
+          await this.publishMetrics('SonicCanaryTurn2ReasoningTime', turn2ReasoningTime, sessionId);
+          await this.publishMetrics('SonicCanaryTurn2ReceiveTime', turn2ReceiveTime, sessionId);
+          
+          // Combined latency metric (time to first response for both turns)
+          const totalReasoningLatency = turn1ReasoningTime + turn2ReasoningTime;
+          await this.publishMetrics('SonicCanaryTotalReasoningLatency', totalReasoningLatency, sessionId);
           
           // Save transcript and metrics
           if (transcript.length > 0) {
@@ -371,6 +391,18 @@ class StreamingCore {
         fs.writeFileSync(inputPath, inputWavBuffer);
         console.log(`📥 Saved input: ${inputPath}`);
         
+        // Upload to S3
+        const bucket = process.env.TRANSCRIPT_BUCKET;
+        if (bucket) {
+          await this.s3.send(new PutObjectCommand({
+            Bucket: bucket,
+            Key: `recordings/${timestamp}/turn${currentTurn + 1}_input.wav`,
+            Body: inputWavBuffer,
+            ContentType: 'audio/wav'
+          }));
+          console.log(`☁️  Uploaded input to S3: s3://${bucket}/recordings/${timestamp}/turn${currentTurn + 1}_input.wav`);
+        }
+        
         const chunks = [...audioFile.chunks];
         // Add real analog silence after speaking
         const silenceChunks = this.loadSilence();
@@ -404,7 +436,7 @@ class StreamingCore {
       
       // Listen for agent responses
       channel.subscribe({
-        next: (data) => {
+        next: async (data) => {
           const eventType = data.event?.event || data.type;
           console.log('📨 Received:', eventType);
           
@@ -469,6 +501,18 @@ class StreamingCore {
               const outputPath = path.join(recordingsDir, `turn${currentTurn}_output.wav`);
               fs.writeFileSync(outputPath, outputWavBuffer);
               console.log(`📤 Saved output: ${outputPath}`);
+              
+              // Upload to S3
+              const bucket = process.env.TRANSCRIPT_BUCKET;
+              if (bucket) {
+                await this.s3.send(new PutObjectCommand({
+                  Bucket: bucket,
+                  Key: `recordings/${timestamp}/turn${currentTurn}_output.wav`,
+                  Body: outputWavBuffer,
+                  ContentType: 'audio/wav'
+                }));
+                console.log(`☁️  Uploaded output to S3: s3://${bucket}/recordings/${timestamp}/turn${currentTurn}_output.wav`);
+              }
             }
             
             const delay = parseInt(process.env.TURN_DELAY_MS || '2000');
@@ -478,8 +522,8 @@ class StreamingCore {
           }
         },
         error: async (error) => {
-          await this.publishMetrics('StreamingCanarySuccess', 0, sessionId);
-          await this.publishMetrics('StreamingCanaryFailure', 1, sessionId);
+          await this.publishMetrics('SonicCanarySuccess', 0, sessionId);
+          await this.publishMetrics('SonicCanaryFailure', 1, sessionId);
           resolve({ statusCode: 500, error: error.message });
         }
       });
@@ -487,9 +531,9 @@ class StreamingCore {
       // Timeout with failure metrics
       setTimeout(async () => {
         const totalTime = Date.now() - startTime;
-        await this.publishMetrics('StreamingCanarySuccess', 0, sessionId);
-        await this.publishMetrics('StreamingCanaryTimeout', 1, sessionId);
-        await this.publishMetrics('StreamingCanaryTotalTime', totalTime, sessionId);
+        await this.publishMetrics('SonicCanarySuccess', 0, sessionId);
+        await this.publishMetrics('SonicCanaryTimeout', 1, sessionId);
+        await this.publishMetrics('SonicCanaryTotalTime', totalTime, sessionId);
         resolve({ statusCode: 200, message: 'Conversation timeout' });
       }, 30000);
     });

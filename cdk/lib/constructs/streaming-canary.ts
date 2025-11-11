@@ -34,6 +34,7 @@ export class SonicCanary extends Construct {
         VOICE_ID: 'tiffany',
         TURN_DELAY_MS: '2000',
         AUDIO_BUCKET: 'sonic-canary-audio-441262788356-us-east-1',
+        TRANSCRIPT_BUCKET: 'sonic-canary-transcripts-441262788356-us-east-1',
         EVENT_API_ENDPOINT: eventBus?.httpEndpoint || 'https://6okdb2chbnetdmam3rgmbvmh6m.appsync-api.us-east-1.amazonaws.com',
         EVENT_BUS_NAMESPACE: eventBus?.defaultChannelName || 'event-bus',
       },

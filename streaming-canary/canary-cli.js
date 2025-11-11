@@ -55,7 +55,7 @@ Options:
     const audioFiles = [];
     
     try {
-      const audioFile1 = core.loadAudioFile(config.file1);
+      const audioFile1 = await core.loadAudioFile(config.file1);
       audioFiles.push(audioFile1);
       console.log(`✓ Loaded ${config.file1} (${audioFile1.size} bytes)`);
     } catch (e) {
@@ -64,7 +64,7 @@ Options:
     }
     
     try {
-      const audioFile2 = core.loadAudioFile(config.file2);
+      const audioFile2 = await core.loadAudioFile(config.file2);
       audioFiles.push(audioFile2);
       console.log(`✓ Loaded ${config.file2} (${audioFile2.size} bytes)`);
     } catch (e) {

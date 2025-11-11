@@ -52,9 +52,13 @@ async def handle_client(websocket):
                 data = json.loads(message)
                 event_type = list(data.get('event', {}).keys())[0] if data.get('event') else None
                 
+                # Extract client turn tag if present
+                client_turn = data.get('_clientTurn', '')
+                turn_label = f"T{client_turn}" if client_turn else "--"
+                
                 # Only log non-audio events
                 if event_type not in ['audioInput']:
-                    print(f"[AGENT] Received from client: {event_type}")
+                    print(f"[AGENT:{turn_label}] Received from client: {event_type}")
                 
                 if event_type == 'sessionStart':
                     # Send to Bedrock
@@ -77,9 +81,12 @@ async def handle_client(websocket):
                     break
                     
                 else:
-                    # Forward all other events to Bedrock
+                    # Forward all other events to Bedrock (strip client tag)
                     if event_type not in ['audioInput']:
-                        print(f"[AGENT] Client→Bedrock: {event_type}")
+                        print(f"[AGENT:{turn_label}] Client→Bedrock: {event_type}")
+                    # Remove client tag before forwarding to Bedrock
+                    if '_clientTurn' in data:
+                        data = {k: v for k, v in data.items() if k != '_clientTurn'}
                     await session.send_raw_event(data)
                     
             except json.JSONDecodeError as e:
@@ -112,7 +119,6 @@ async def handle_client(websocket):
 async def forward_bedrock_to_client(websocket, session: S2sSessionManager):
     """Forward Bedrock responses to WebSocket client"""
     print("[FORWARD] Starting to forward Bedrock responses...")
-    current_turn = 0
     audio_ended = False
     
     try:
@@ -121,9 +127,8 @@ async def forward_bedrock_to_client(websocket, session: S2sSessionManager):
             
             event_type = list(response.get('event', {}).keys())[0] if response.get('event') else 'unknown'
             
-            # Track turns based on completionStart
+            # Reset audio_ended on new completion
             if event_type == 'completionStart':
-                current_turn += 1
                 audio_ended = False
             
             # Build display name with type for content events
@@ -146,10 +151,9 @@ async def forward_bedrock_to_client(websocket, session: S2sSessionManager):
             try:
                 await websocket.send(json.dumps(response))
                 
-                # Log non-audio events with turn number
+                # Log non-audio events
                 if event_type not in ['audioOutput']:
-                    turn_label = f"T{current_turn}" if current_turn > 0 else "--"
-                    print(f"[FORWARD:{turn_label}] Bedrock→Client: {display_name}")
+                    print(f"[FORWARD] Bedrock→Client: {display_name}")
                 
                 # Check for session end
                 if 'event' in response and 'sessionEnd' in response['event']:

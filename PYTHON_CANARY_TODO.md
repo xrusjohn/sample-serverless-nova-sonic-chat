@@ -79,19 +79,19 @@ python canary_cli.py \
 
 ---
 
-## Phase 3: Lambda Handler
+## Phase 3: Lambda Handler ✅
 
-### ☐ Task 3.1: Create `python-agent/canary_lambda.py`
+### ✅ Task 3.1: Create `python-agent/sonic_canary_lambda.py`
 **What:** Lambda handler for scheduled canary tests
 
 **Features:**
-- [ ] Load audio files from S3 (env vars: `AUDIO_BUCKET`, `AUDIO_FILE1`, `AUDIO_FILE2`)
-- [ ] Convert S3 audio to base64 chunks
-- [ ] Call `canary_core.run_two_turn_test()` (same function as CLI!)
-- [ ] Publish CloudWatch metrics using boto3
-- [ ] Save recordings to S3 (bucket from env var: `RECORDINGS_BUCKET`)
-- [ ] Save transcript to S3
-- [ ] Return Lambda response with success/failure
+- [x] Load audio files from S3 (env vars: `AUDIO_BUCKET`, `AUDIO_FILE1`, `AUDIO_FILE2`)
+- [x] Convert S3 audio to base64 chunks
+- [x] Call `canary_core.run_two_turn_test()` (same function as CLI!)
+- [x] Publish CloudWatch metrics using boto3
+- [x] Save recordings to S3 (bucket from env var: `RECORDINGS_BUCKET`)
+- [x] Save transcript to S3
+- [x] Return Lambda response with success/failure
 
 **CloudWatch metrics to publish:**
 ```python
@@ -120,7 +120,7 @@ s3://bucket/recordings/YYYY-MM-DD-HH-MM-SS-sessionId/
   └── metrics.json
 ```
 
-### ☐ Task 3.2: Update `python-agent/requirements.txt`
+### ✅ Task 3.2: Update `python-agent/requirements.txt`
 Add dependencies:
 ```
 websockets>=12.0
@@ -129,69 +129,263 @@ boto3>=1.34.0
 
 ---
 
-## Phase 4: CDK Infrastructure
+## Phase 4: Deployment Architecture Evaluation
 
-### ☐ Task 4.1: Add Canary to `cdk/lib/python-websocket-stack.ts`
-**What:** Add Lambda canary function and schedule
+### ☐ Task 4.1: Evaluate Deployment Options
+**What:** Choose optimal deployment strategy for agent and canary
 
-**Add to stack:**
-- [ ] Create S3 bucket for audio files (or reuse existing)
-- [ ] Create S3 bucket for recordings (or reuse existing)
-- [ ] Upload audio files to S3 (from `canary/audio/` directory)
-- [ ] Create Lambda function:
-  - Runtime: Python 3.12
-  - Handler: `canary_lambda.handler`
-  - Timeout: 5 minutes
-  - Memory: 512 MB
-  - Code: `python-agent/` directory
-  - Environment variables:
-    - `WS_URL`: WebSocket API URL (from stack output)
-    - `AUDIO_BUCKET`: S3 bucket with audio files
-    - `AUDIO_FILE1`: `turn1.wav`
-    - `AUDIO_FILE2`: `turn2.wav`
-    - `RECORDINGS_BUCKET`: S3 bucket for recordings
-    - `VOICE_ID`: `matthew`
-- [ ] IAM permissions:
-  - S3 read (audio bucket)
-  - S3 write (recordings bucket)
-  - CloudWatch PutMetricData
-- [ ] EventBridge rule: Schedule every 5 minutes
-- [ ] Add stack output: `CanaryFunctionName`
+**Options:**
 
-### ☐ Task 4.2: Create `cdk/lib/constructs/python-canary.ts` (optional)
-Extract canary into separate construct for cleaner code (like Node.js version)
+**Option A: Current Lambda Approach**
+- ✅ Agent: Lambda + API Gateway WebSocket
+- ✅ Canary: Lambda + EventBridge
+- ✅ Pros: Simple, serverless, existing implementation
+- ❌ Cons: Cold starts, 15min timeout limit
+
+**Option B: AgentCore + ECS Hybrid** (Recommended to evaluate)
+- 🔄 Agent: ECS Fargate (WebSocket server)
+- 🔄 Canary: AgentCore Runtime (scheduled function)
+- ✅ Pros: No cold starts for agent, AgentCore handles canary scheduling
+- ❌ Cons: AgentCore doesn't support WebSocket servers
+- 📝 Note: AgentCore Runtime perfect for canary (client-only, scheduled)
+
+**Option C: Full AgentCore** (If WebSocket support added)
+- 🔄 Agent: AgentCore Runtime (if WebSocket server support added)
+- 🔄 Canary: AgentCore Runtime
+- ✅ Pros: Unified platform, managed scaling, built-in observability
+- ❌ Cons: Requires AgentCore WebSocket server support
+
+**Option D: ECS + Lambda Hybrid**
+- 🔄 Agent: ECS Fargate (WebSocket server)
+- ✅ Canary: Lambda + EventBridge (current implementation)
+- ✅ Pros: No cold starts for agent, simple canary
+- ❌ Cons: Mixed deployment complexity
+
+**Option E: Full ECS Fargate** (Unified container approach)
+- 🔄 Agent: ECS Fargate (WebSocket server)
+- 🔄 Canary: ECS Fargate (scheduled task)
+- ✅ Pros: Unified deployment, no cold starts, no timeouts, consistent runtime
+- ✅ Pros: Same Docker image for both services, shared code/dependencies
+- ✅ Pros: Better resource control, persistent connections
+- ❌ Cons: More complex than serverless, always-on costs for agent
+- 📝 Note: Canary as scheduled ECS task (EventBridge → ECS RunTask)
+
+### ☐ Task 4.2: AgentCore Canary Feasibility
+**What:** Investigate AgentCore Runtime for canary deployment
+
+**Research:**
+- [ ] Check AgentCore Runtime Python support
+- [ ] Verify scheduling capabilities (cron-like)
+- [ ] Test WebSocket client connectivity from AgentCore
+- [ ] Evaluate CloudWatch metrics integration
+- [ ] Compare cost vs Lambda
+
+**AgentCore Canary Benefits:**
+- Built-in observability and monitoring
+- Managed scaling and deployment
+- Integrated with AWS services
+- No cold start issues
+- Potentially better cost model
+
+### ☐ Task 4.3: ECS Fargate Feasibility
+**What:** Evaluate ECS Fargate for both agent and canary
+
+**Agent Research:**
+- [ ] WebSocket connection handling at scale
+- [ ] Load balancing for WebSocket connections (ALB sticky sessions)
+- [ ] Auto-scaling based on connection count
+- [ ] Cost comparison vs Lambda
+- [ ] Deployment complexity
+
+**Canary Research:**
+- [ ] ECS scheduled tasks via EventBridge
+- [ ] Task definition for one-time execution
+- [ ] Container startup time vs Lambda cold start
+- [ ] Cost per execution vs Lambda
+- [ ] CloudWatch integration from containers
+
+**ECS Benefits:**
+- No timeout limits
+- Persistent connections (agent)
+- Consistent runtime environment
+- Shared Docker image and dependencies
+- Better resource control and monitoring
+- No cold start issues
+
+### ✅ Task 4.4: Architecture Decision Made
+**Decision:** Hybrid approach with future ECS migration
+
+**Phase 1: Lambda Canary (Current)**
+- ✅ Canary: Lambda + EventBridge (simple, cost-effective for monitoring)
+- ✅ Agent: Lambda + API Gateway (existing, works for demo/dev)
+- ✅ Rationale: Serverless perfect for periodic canary testing
+
+**Phase 2: ECS Migration (Future)**
+- 🔄 Agent: Migrate to ECS Fargate (production traffic, no timeouts)
+- 🔄 Load Testing: ECS tasks for multi-client load generation
+- 🔄 Evaluation: ECS for complex multi-turn agent testing
+- ✅ Rationale: ECS better for sustained connections, load testing, evaluation
+
+**Growth Path:**
+```
+Canary CLI → Load Testing CLI → Multi-turn Evaluation CLI
+     ↓              ↓                    ↓
+ Lambda Canary → ECS Load Tests → ECS Evaluation Suite
+```
+
+**Benefits:**
+- Start simple with Lambda canary
+- Build ECS foundation for future growth
+- Same `canary_core.py` works in both environments
+- CLI grows into comprehensive testing suite
 
 ---
 
-## Phase 5: Testing & Validation
+## Phase 5: CDK Infrastructure
 
-### ☐ Task 5.1: Test CLI locally
+**Strategy:** Implement both Lambda canary AND ECS foundation
+
+**Current State:**
+✅ `NovaSonicCanaryStack` exists with Python WebSocket API and agent Lambda  
+✅ Stack has DynamoDB table, IAM permissions, API Gateway setup  
+❌ **Missing:** Python canary Lambda function in same stack  
+
+### ✅ Task 5.1: Add Lambda Canary to `nova-sonic-canary-stack.ts`
+**What:** Add canary Lambda function for immediate monitoring
+
+**Added to stack:**
+- [x] Python canary Lambda function:
+  - Runtime: Python 3.12
+  - Handler: `sonic_canary_lambda.handler`
+  - Timeout: 5 minutes
+  - Memory: 512 MB
+  - Code: `python-agent/` directory (same as agent)
+  - Environment variables:
+    - `WS_URL`: Uses `this.webSocketUrl` from existing stack
+    - `AUDIO_BUCKET`: `sonic-canary-audio-441262788356-us-east-1`
+    - `AUDIO_FILE1`: `turn1.wav`
+    - `AUDIO_FILE2`: `turn2.wav`
+    - `RECORDINGS_BUCKET`: `sonic-canary-transcripts-441262788356-us-east-1`
+    - `VOICE_ID`: `matthew`
+- [x] IAM permissions: S3 read/write, CloudWatch metrics
+- [x] EventBridge rule: Schedule every 5 minutes
+- [x] Stack outputs: `PythonCanaryFunctionName`S_URL`: Use `this.webSocketUrl` from existing stack
+    - `AUDIO_BUCKET`: `sonic-canary-audio-441262788356-us-east-1`
+    - `AUDIO_FILE1`: `turn1.wav`
+    - `AUDIO_FILE2`: `turn2.wav`
+    - `RECORDINGS_BUCKET`: `sonic-canary-transcripts-441262788356-us-east-1`
+    - `VOICE_ID`: `matthew`
+- [ ] IAM permissions: S3 read/write, CloudWatch metrics
+- [ ] EventBridge rule: Schedule every 5 minutes
+
+### ☐ Task 5.2: Add ECS Foundation (Future-ready)
+**What:** Create ECS infrastructure for load testing and evaluation
+
+**Add to stack:**
+- [ ] ECS Cluster for Python services
+- [ ] Task definition using same `python-agent/` code
+- [ ] Service for WebSocket agent (optional, for production)
+- [ ] Task definition for load testing (future)
+- [ ] IAM roles for ECS tasks
+- [ ] ALB for WebSocket load balancing (when needed)
+
+### ☐ Task 5.3: Create Dockerfile
+**What:** Containerize Python agent for ECS deployment
+
+- [ ] Create `python-agent/Dockerfile`
+- [ ] Multi-stage build (dependencies + app)
+- [ ] Support both agent server and canary client modes
+- [ ] Environment-based configuration
+- [ ] Health checks for WebSocket serverucket)
+  - S3 write (recordings bucket)
+  - CloudWatch PutMetricData
+- [ ] EventBridge rule: Schedule every 5 minutes
+- [ ] Add stack output: `PythonCanaryFunctionName`
+
+### ✅ Task 5.4: Deploy Enhanced Stack
+**Status:** DEPLOYED! 🎉
+
+**Deployment Commands:**
+```bash
+cd cdk
+npx cdk deploy NovaSonicCanaryStack
+```
+
+**Next: Verification Steps**
+- [ ] Wait 5 minutes for first scheduled execution
+- [ ] Check CloudWatch logs for canary function
+- [ ] Verify metrics appear in `SonicCanaryPython` namespace
+- [ ] Test manual canary execution (optional)
+- [ ] Confirm S3 recordings are saved
+- [ ] Check for any errors in logs
+
+---
+
+## Phase 6: Testing & Validation ⏳
+
+### ☐ Task 6.1: Verify Deployment
+**What:** Confirm canary is running successfully
+
+**Quick Verification:**
+```bash
+# Get canary function name from stack outputs
+aws cloudformation describe-stacks --stack-name NovaSonicCanaryStack \
+  --query 'Stacks[0].Outputs[?OutputKey==`PythonCanaryFunctionName`].OutputValue' \
+  --output text
+
+# Check recent logs
+aws logs tail /aws/lambda/<FUNCTION_NAME> --follow
+
+# List CloudWatch metrics
+aws cloudwatch list-metrics --namespace SonicCanaryPython
+
+# Check S3 recordings
+aws s3 ls s3://sonic-canary-transcripts-441262788356-us-east-1/recordings/ --recursive
+```
+
+**Expected Results:**
+- ✅ Canary executes every 5 minutes
+- ✅ Logs show successful 2-turn conversation
+- ✅ Metrics published to `SonicCanaryPython` namespace
+- ✅ Recordings saved to S3 with timestamp folders
+- ✅ No errors in CloudWatch logs
+
+### ☐ Task 6.2: Test CLI locally
 ```bash
 cd python-agent
 python canary_cli.py --ws-url wss://YOUR-URL --audio1 ../canary/audio/turn1.wav --audio2 ../canary/audio/turn2.wav
 ```
 **Expected:** 2-turn conversation completes, timing metrics printed
 
-### ☐ Task 5.2: Deploy and test Lambda
-```bash
-cd cdk
-npx cdk deploy SonicAgentPythonStack
-```
-**Expected:** Lambda runs every 5 minutes, metrics appear in CloudWatch
+### ☐ Task 6.3: Manual Canary Test (Optional)
+**What:** Trigger canary manually to test immediately
 
-### ☐ Task 5.3: Verify CloudWatch metrics
+```bash
+# Invoke canary function manually
+aws lambda invoke \
+  --function-name <FUNCTION_NAME> \
+  --payload '{}' \
+  response.json
+
+# Check response
+cat response.json | jq .
+```
+
+**Expected:** Successful execution with metrics and recordings
+
+### ☐ Task 6.4: Verify CloudWatch metrics
 - [ ] Check CloudWatch console for `SonicCanaryPython` namespace
 - [ ] Verify all metrics are publishing
 - [ ] Check for failures (Success = 0)
 
-### ☐ Task 5.4: Verify S3 recordings
+### ☐ Task 6.5: Verify S3 recordings
 - [ ] Check recordings bucket for timestamped folders
 - [ ] Verify audio files are valid WAV format
 - [ ] Verify transcript.json has conversation data
 
 ---
 
-## Phase 6: Dashboard (Optional)
+## Phase 7: Dashboard (Optional)
 
 ### ☐ Task 6.1: Add Python metrics to existing dashboard
 Update `cdk/lib/constructs/canary-dashboard.ts`:
@@ -208,7 +402,7 @@ Create `cdk/lib/constructs/python-canary-dashboard.ts`:
 
 ---
 
-## Phase 7: Documentation
+## Phase 8: Documentation
 
 ### ☐ Task 7.1: Update `PYTHON_DEPLOYMENT.md`
 - [ ] Add canary usage instructions
@@ -240,13 +434,16 @@ Create `cdk/lib/constructs/python-canary-dashboard.ts`:
 
 - ✅ Phase 1 (Core): 2-3 hours → **COMPLETED**
 - ✅ Phase 2 (CLI): 1 hour → **COMPLETED**
-- Phase 3 (Lambda): 1-2 hours
-- Phase 4 (CDK): 1-2 hours
-- Phase 5 (Testing): 1 hour
-- Phase 6 (Dashboard): 1 hour (optional)
-- Phase 7 (Docs): 30 minutes
+- ✅ Phase 3 (Lambda): 1-2 hours → **COMPLETED**
+- Phase 4 (Architecture): 1 hour
+- Phase 5 (CDK): 1-2 hours
+- Phase 6 (Testing): 1 hour
+- Phase 7 (Dashboard): 1 hour (optional)
+- Phase 8 (Docs): 30 minutes
 
-**Total: 7-10 hours** | **Completed: ~3 hours** | **Remaining: ~4-7 hours**
+**Total: 8-11 hours** | **Completed: ~5 hours** | **Remaining: ~3-6 hours**
+
+**NEXT:** Evaluate AgentCore + ECS deployment options before implementing CDK
 
 ---
 

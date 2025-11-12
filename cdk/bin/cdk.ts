@@ -2,7 +2,7 @@
 import * as cdk from 'aws-cdk-lib';
 import { NovaSonicWebappStack } from '../lib/nova-sonic-webapp-stack';
 import { NovaSonicCanaryStack } from '../lib/nova-sonic-canary-stack';
-import { SonicCanaryAppRunnerStack } from '../lib/sonic-canary-apprunner-stack';
+import { SonicCanaryEcsStack } from '../lib/sonic-canary-ecs-stack';
 import { AwsSolutionsChecks } from 'cdk-nag';
 import { Aspects } from 'aws-cdk-lib';
 
@@ -28,8 +28,8 @@ new NovaSonicCanaryStack(app, 'NovaSonicCanaryStack', {
   bedrockRegion,
 });
 
-// Sonic Canary (App Runner agent + Lambda canary client)
-new SonicCanaryAppRunnerStack(app, 'SonicCanaryAppRunnerStack', {
+// Sonic Canary (ECS Fargate agent + Lambda canary client)
+new SonicCanaryEcsStack(app, 'SonicCanaryEcsStack', {
   env: {
     account: process.env.CDK_DEFAULT_ACCOUNT,
     region: process.env.CDK_DEFAULT_REGION,

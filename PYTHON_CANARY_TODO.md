@@ -308,6 +308,76 @@ CMD ["python", "sonic_agent_local.py"]
 - [ ] Target group with sticky sessions
 
 ### ☐ Task 5.4: Add Lambda Canary to Stack
+
+---
+
+## Phase 6: CI/CD Pipeline
+
+### ☐ Task 6.1: Design CI/CD Strategy
+**What:** Simple pipeline for agent deployments
+
+**Requirements:**
+- Fast iteration for development
+- Safe deployments to production
+- Automated testing before deploy
+- Rollback capability
+
+**Options:**
+
+**Option A: GitHub Actions + CDK**
+```yaml
+on: push
+jobs:
+  test:
+    - Run unit tests
+    - Run canary CLI locally
+  deploy:
+    - cdk deploy SonicCanaryAppRunnerStack
+```
+
+**Option B: CodePipeline + CodeBuild**
+- Source: GitHub/CodeCommit
+- Build: Docker image + tests
+- Deploy: CDK deploy
+- Rollback: Redeploy previous commit
+
+**Option C: Manual with scripts**
+```bash
+./scripts/test-local.sh   # Run canary locally
+./scripts/deploy.sh       # CDK deploy with confirmation
+```
+
+**Considerations:**
+- App Runner: 3-5 min deploys, automatic blue/green
+- Canary Lambda: Tests production after each deploy
+- Local testing: Run agent + canary before pushing
+
+### ☐ Task 6.2: Add Deployment Scripts
+**What:** Helper scripts for common workflows
+
+**Scripts to create:**
+- `scripts/test-local.sh` - Run agent + canary locally
+- `scripts/deploy-dev.sh` - Deploy to dev environment
+- `scripts/deploy-prod.sh` - Deploy to prod with checks
+- `scripts/rollback.sh` - Redeploy previous version
+
+### ☐ Task 6.3: Add Pre-deployment Tests
+**What:** Automated checks before deployment
+
+**Tests:**
+- [ ] Unit tests for canary_core.py
+- [ ] Integration test: Local agent + canary
+- [ ] Linting: ruff/black on Python code
+- [ ] CDK synth validation
+
+### ☐ Task 6.4: Add Deployment Monitoring
+**What:** Track deployment health
+
+**Metrics:**
+- App Runner deployment status
+- First canary run after deploy (success/fail)
+- CloudWatch alarms on canary failures
+- Slack/SNS notifications on deploy eventsStack
 **What:** Add canary Lambda to `PythonSonicStack`
 
 **Features:**

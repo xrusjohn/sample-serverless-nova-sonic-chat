@@ -171,8 +171,10 @@ async def forward_bedrock_to_client(websocket, session: S2sSessionManager):
         import traceback
         traceback.print_exc()
 
-async def run_server(host='0.0.0.0', port=9000):
+async def run_server(host='0.0.0.0', port=None):
     """Run WebSocket server"""
+    # Use PORT env var for Lambda Web Adapter, default to 9000 for local
+    port = port or int(os.environ.get('PORT', 9000))
     print(f"Starting Nova Sonic WebSocket agent on ws://{host}:{port}")
     async with websockets.serve(handle_client, host, port):
         print(f"[AGENT] Server ready and listening on ws://{host}:{port}")

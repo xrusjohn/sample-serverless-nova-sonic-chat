@@ -10,10 +10,12 @@ export class CanaryDashboard extends Construct {
       dashboardName: 'SonicCanaryV4',
     });
 
+    // Node.js Canary Metrics
     const successRate = new Metric({
       namespace: 'SonicCanary',
       metricName: 'SonicCanarySuccess',
       statistic: 'Average',
+      label: 'Node.js Success',
     });
 
     const timeoutRate = new Metric({
@@ -26,6 +28,42 @@ export class CanaryDashboard extends Construct {
       namespace: 'SonicCanary',
       metricName: 'SonicCanaryFailure',
       statistic: 'Average',
+    });
+
+    // Python Canary Metrics
+    const pythonSuccess = new Metric({
+      namespace: 'SonicCanaryPython',
+      metricName: 'Success',
+      statistic: 'Average',
+      label: 'Python Success',
+    });
+
+    const pythonTotalTime = new Metric({
+      namespace: 'SonicCanaryPython',
+      metricName: 'TotalTime',
+      statistic: 'Average',
+      label: 'Python Total Time',
+    });
+
+    const pythonTurn1Time = new Metric({
+      namespace: 'SonicCanaryPython',
+      metricName: 'Turn1Time',
+      statistic: 'Average',
+      label: 'Python Turn 1',
+    });
+
+    const pythonTurn2Time = new Metric({
+      namespace: 'SonicCanaryPython',
+      metricName: 'Turn2Time',
+      statistic: 'Average',
+      label: 'Python Turn 2',
+    });
+
+    const pythonConnectTime = new Metric({
+      namespace: 'SonicCanaryPython',
+      metricName: 'ConnectTime',
+      statistic: 'Average',
+      label: 'Python Connect',
     });
 
     const totalTime = new Metric({ namespace: 'SonicCanary', metricName: 'SonicCanaryTotalTime', statistic: 'Average' });
@@ -96,18 +134,39 @@ export class CanaryDashboard extends Construct {
       dimensionsMap: { ModelId: 'amazon.nova-sonic-v1:0' },
     });
 
+    // Row 1: Success Rates (Node.js vs Python)
     dashboard.addWidgets(
       new SingleValueWidget({
-        title: 'Success Rate',
+        title: 'Node.js Success Rate',
         metrics: [successRatePercent],
         sparkline: true,
         width: 6,
         height: 3,
-        period: Duration.minutes(5), // Use 5-minute periods for more responsive updates
+        period: Duration.minutes(5),
       }),
       new SingleValueWidget({
-        title: 'Avg Total Time',
+        title: 'Python Success Rate',
+        metrics: [new MathExpression({
+          expression: 'm1 * 100',
+          usingMetrics: { m1: pythonSuccess },
+          label: 'Python Success %',
+        })],
+        sparkline: true,
+        width: 6,
+        height: 3,
+        period: Duration.minutes(5),
+      }),
+      new SingleValueWidget({
+        title: 'Node.js Avg Total Time',
         metrics: [totalTime],
+        sparkline: true,
+        width: 6,
+        height: 3,
+        period: Duration.minutes(5),
+      }),
+      new SingleValueWidget({
+        title: 'Python Avg Total Time',
+        metrics: [pythonTotalTime],
         sparkline: true,
         width: 6,
         height: 3,
@@ -180,11 +239,41 @@ export class CanaryDashboard extends Construct {
 
     dashboard.addWidgets(
       new GraphWidget({
-        title: 'Canary Test Results',
+        title: 'Canary Success Comparison',
+        left: [successRate, pythonSuccess],
+        width: 12,
+        height: 6,
+      }),
+      new GraphWidget({
+        title: 'Node.js Canary Test Results',
         left: [successRate, timeoutRate, failureRate],
         width: 12,
         height: 6,
         stacked: true,
+      }),
+    );
+
+    dashboard.addWidgets(
+      new GraphWidget({
+        title: 'Total Time Comparison (Node.js vs Python)',
+        left: [totalTime, pythonTotalTime],
+        width: 12,
+        height: 6,
+      }),
+      new GraphWidget({
+        title: 'Turn Time Comparison',
+        left: [turn1Time, turn2Time, pythonTurn1Time, pythonTurn2Time],
+        width: 12,
+        height: 6,
+      }),
+    );
+
+    dashboard.addWidgets(
+      new GraphWidget({
+        title: 'Python Canary Connect Time',
+        left: [pythonConnectTime],
+        width: 12,
+        height: 6,
       }),
       new GraphWidget({
         title: 'Bedrock Nova Sonic Invocations',

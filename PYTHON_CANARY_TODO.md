@@ -303,7 +303,7 @@ Canary CLI → Load Testing CLI → Multi-turn Evaluation CLI
 - [ ] Add stack output: `PythonCanaryFunctionName`
 
 ### ✅ Task 5.4: Deploy Enhanced Stack
-**Status:** DEPLOYED! 🎉
+**Status:** DEPLOYED! 🎉 (Committed: bab4712)
 
 **Deployment Commands:**
 ```bash
@@ -311,19 +311,140 @@ cd cdk
 npx cdk deploy NovaSonicCanaryStack
 ```
 
-**Next: Verification Steps**
-- [ ] Wait 5 minutes for first scheduled execution
-- [ ] Check CloudWatch logs for canary function
-- [ ] Verify metrics appear in `SonicCanaryPython` namespace
-- [ ] Test manual canary execution (optional)
-- [ ] Confirm S3 recordings are saved
-- [ ] Check for any errors in logs
+**Deployment Results:**
+- ✅ Canary deployed and running every 5 minutes
+- ✅ Metrics publishing to CloudWatch (SonicCanaryPython namespace)
+- ✅ S3 recordings being saved
+- ❌ Agent has event loop issues with API Gateway WebSocket
+- 🔄 **Next:** Implement Lambda Web Adapter for agent
+
+**Issue Identified:**
+API Gateway WebSocket invokes Lambda separately for each message, causing async event loop conflicts when trying to maintain persistent Bedrock streaming connection across invocations.
+
+**Solution:** Lambda Web Adapter
+- Run existing WebSocket server (sonic_agent_local.py) in Lambda
+- Persistent connection within single Lambda invocation
+- No API Gateway WebSocket complexity
+- Direct WebSocket via Lambda Function URL
 
 ---
 
-## Phase 6: Testing & Validation ⏳
+## Phase 6: Lambda Web Adapter Implementation
 
-### ☐ Task 6.1: Verify Deployment
+### ❌ Task 6.1: Lambda Web Adapter (Doesn't Support WebSocket)
+**What:** Replace API Gateway WebSocket with Lambda Web Adapter + Function URL
+
+**Architecture Change:**
+```
+OLD: Client → API Gateway WebSocket → Lambda (per message) → Bedrock
+NEW: Client → Lambda Function URL → Lambda Web Adapter → WebSocket Server → Bedrock
+```
+
+**Issue:** Lambda Web Adapter only supports HTTP/HTTPS, not WebSocket protocol.
+
+**Attempted Implementation:**
+- [x] Researched Lambda Web Adapter
+- [x] Created run.sh and wrapper scripts
+- [x] Updated sonic_agent_local.py for PORT env var
+- ❌ **Blocked:** LWA doesn't support WebSocket
+
+**Reverted to:** API Gateway WebSocket + Lambda (current deployment)
+
+**Benefits:**
+- ✅ Persistent WebSocket connection (up to 15 min)
+- ✅ No event loop issues
+- ✅ Reuse existing local agent code
+- ✅ Simpler architecture
+- ✅ Better streaming performance
+
+### ✅ Task 6.2: Deploy Both ECS Fargate and App Runner
+
+**Strategy:** Deploy agent in both ECS and App Runner for comparison
+
+**Shared:**
+- [x] Created Dockerfile for sonic_agent_local.py
+- [x] Health check configuration
+- [x] Environment variables (BEDROCK_REGION, PORT)
+
+**ECS Fargate Implementation:**
+- [x] Created `ecs-agent.ts` construct
+- [x] VPC and ECS Cluster setup
+- [x] Fargate task definition (1024 MB, 512 CPU)
+- [x] Application Load Balancer with sticky sessions
+- [x] Auto-scaling configuration
+- [x] CloudWatch logs integration
+- [ ] Deploy and test
+
+**App Runner Implementation:**
+- [x] Created `apprunner-agent.ts` construct
+- [x] ECR image asset build
+- [x] IAM roles for Bedrock access
+- [x] Auto-scaling (default config)
+- [x] Built-in HTTPS/WSS
+- [ ] Deploy and test
+
+**Comparison Points:**
+- Deployment complexity
+- Cold start behavior
+- Auto-scaling responsiveness
+- Cost (always-on vs traffic-based)
+- WebSocket connection stability
+- Operational overhead
+
+### ✅ Task 6.3: Add Dashboard to Stack
+**What:** Integrate CloudWatch dashboard with both Node.js and Python metrics
+
+**Implementation:**
+- [x] Import CanaryDashboard into NovaSonicCanaryStack
+- [x] Add Python canary metrics to dashboard
+- [x] Create comparison widgets (Node.js vs Python)
+- [x] Dashboard shows both canary implementations side-by-side
+
+**Dashboard Widgets:**
+- Success rate comparison
+- Total time comparison  
+- Turn time comparison
+- Connect time metrics
+- Bedrock usage metrics
+
+### ☐ Task 6.4: Deploy and Compare
+**What:** Deploy both ECS and App Runner, test with canary
+
+```bash
+# Deploy with both agents
+cd cdk
+npx cdk deploy NovaSonicCanaryStack --all
+
+# Test ECS endpoint
+python sonic_canary_cli.py --ws-url <ECS_URL>
+
+# Test App Runner endpoint  
+python sonic_canary_cli.py --ws-url <APPRUNNER_URL>
+```
+
+**Metrics to Compare:**
+- Connection establishment time
+- Turn 1 & 2 latency
+- Success rate
+- Cost per hour
+- Deployment time
+**What:** Verify agent works with Lambda Web Adapter
+
+```bash
+# Deploy updated stack
+cd cdk
+npx cdk deploy NovaSonicCanaryStack
+
+# Test with CLI
+cd python-agent
+python sonic_canary_cli.py --ws-url <FUNCTION_URL>
+```
+
+---
+
+## Phase 7: Testing & Validation ⏳
+
+### ☐ Task 7.1: Verify Deployment
 **What:** Confirm canary is running successfully
 
 **Quick Verification:**
@@ -350,14 +471,14 @@ aws s3 ls s3://sonic-canary-transcripts-441262788356-us-east-1/recordings/ --rec
 - ✅ Recordings saved to S3 with timestamp folders
 - ✅ No errors in CloudWatch logs
 
-### ☐ Task 6.2: Test CLI locally
+### ☐ Task 7.2: Test CLI locally
 ```bash
 cd python-agent
 python canary_cli.py --ws-url wss://YOUR-URL --audio1 ../canary/audio/turn1.wav --audio2 ../canary/audio/turn2.wav
 ```
 **Expected:** 2-turn conversation completes, timing metrics printed
 
-### ☐ Task 6.3: Manual Canary Test (Optional)
+### ☐ Task 7.3: Manual Canary Test (Optional)
 **What:** Trigger canary manually to test immediately
 
 ```bash
@@ -373,12 +494,12 @@ cat response.json | jq .
 
 **Expected:** Successful execution with metrics and recordings
 
-### ☐ Task 6.4: Verify CloudWatch metrics
+### ☐ Task 7.4: Verify CloudWatch metrics
 - [ ] Check CloudWatch console for `SonicCanaryPython` namespace
 - [ ] Verify all metrics are publishing
 - [ ] Check for failures (Success = 0)
 
-### ☐ Task 6.5: Verify S3 recordings
+### ☐ Task 7.5: Verify S3 recordings
 - [ ] Check recordings bucket for timestamped folders
 - [ ] Verify audio files are valid WAV format
 - [ ] Verify transcript.json has conversation data

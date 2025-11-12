@@ -5,6 +5,9 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import { WebSocketLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
+import { CanaryDashboard } from './constructs/canary-dashboard';
+import { EcsAgent } from './constructs/ecs-agent';
+import { AppRunnerAgent } from './constructs/apprunner-agent';
 
 interface SonicAgentPythonStackProps extends cdk.StackProps {
   readonly bedrockRegion?: string;
@@ -14,6 +17,8 @@ interface SonicAgentPythonStackProps extends cdk.StackProps {
 export class NovaSonicCanaryStack extends cdk.Stack {
   public readonly webSocketUrl: string;
   public readonly handler: lambda.Function;
+  public readonly ecsWebSocketUrl: string;
+  public readonly appRunnerWebSocketUrl: string;
 
   constructor(scope: Construct, id: string, props: SonicAgentPythonStackProps) {
     super(scope, id, props);
@@ -94,6 +99,18 @@ export class NovaSonicCanaryStack extends cdk.Stack {
 
     this.webSocketUrl = stage.url;
 
+    // ECS Fargate Agent
+    const ecsAgent = new EcsAgent(this, 'EcsAgent', {
+      bedrockRegion,
+    });
+    this.ecsWebSocketUrl = ecsAgent.serviceUrl;
+
+    // App Runner Agent
+    const appRunnerAgent = new AppRunnerAgent(this, 'AppRunnerAgent', {
+      bedrockRegion,
+    });
+    this.appRunnerWebSocketUrl = appRunnerAgent.serviceUrl;
+
     // Python Canary Lambda Function
     const canaryFunction = new lambda.Function(this, 'PythonCanaryFunction', {
       runtime: lambda.Runtime.PYTHON_3_12,
@@ -151,14 +168,27 @@ export class NovaSonicCanaryStack extends cdk.Stack {
 
     canaryRule.addTarget(new cdk.aws_events_targets.LambdaFunction(canaryFunction));
 
-    new cdk.CfnOutput(this, 'WebSocketURL', {
+    new cdk.CfnOutput(this, 'LambdaWebSocketURL', {
       value: this.webSocketUrl,
-      description: 'Python WebSocket API URL',
+      description: 'Lambda + API Gateway WebSocket URL',
+    });
+
+    new cdk.CfnOutput(this, 'EcsWebSocketURL', {
+      value: this.ecsWebSocketUrl,
+      description: 'ECS Fargate WebSocket URL',
+    });
+
+    new cdk.CfnOutput(this, 'AppRunnerWebSocketURL', {
+      value: this.appRunnerWebSocketUrl,
+      description: 'App Runner WebSocket URL',
     });
 
     new cdk.CfnOutput(this, 'PythonCanaryFunctionName', {
       value: canaryFunction.functionName,
       description: 'Python Canary Lambda Function Name',
     });
+
+    // CloudWatch Dashboard for both Node.js and Python canaries
+    new CanaryDashboard(this, 'CanaryDashboard');
   }
 }

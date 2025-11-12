@@ -5,34 +5,35 @@ Create a production-ready canary system for the Python WebSocket stack that matc
 
 ---
 
-## Phase 1: Shared Canary Core
+## Phase 1: Shared Canary Core ✅
 
-### ☐ Task 1.1: Create `python-agent/canary_core.py`
+### ✅ Task 1.1: Create `python-agent/canary_core.py`
 **What:** Core canary logic used by both CLI and Lambda
 
 **Functions to implement:**
-- [ ] `async def run_two_turn_test(ws_url, audio_chunks1, audio_chunks2, config={})` 
+- [x] `async def run_two_turn_test(ws_url, audio_chunks1, audio_chunks2, config={})` 
   - Connect to WebSocket
   - Send sessionStart, wait for ready
-  - **Turn 1:** Send promptStart → contentStart → audioInput → contentEnd → promptEnd
+  - **Turn 1:** Send promptStart → contentStart → audioInput (continuous stream with silence)
   - Collect turn 1 audio response
-  - Wait for turn 1 completion
-  - **Turn 2:** Same sequence with second audio
+  - Wait for turn 1 completion (second contentEnd(AUDIO))
+  - Stream silence for audio_duration + 2s
+  - **Turn 2:** Send audio on same content stream (no new contentStart)
   - Collect turn 2 audio response
-  - Send sessionEnd
+  - Send contentEnd → promptEnd → sessionEnd
   - Return structured metrics
 
 **Metrics to collect:**
-- [ ] `total_time` - Full test duration
-- [ ] `turn1_time` - Turn 1 duration (first audio sent → response complete)
-- [ ] `turn2_time` - Turn 2 duration
-- [ ] `connect_time` - WebSocket connection time
-- [ ] `turn1_send_time` - Time to send turn 1 audio
-- [ ] `turn1_reasoning_time` - Time from send complete → first response
-- [ ] `turn1_receive_time` - Time to receive full turn 1 response
-- [ ] `turn2_send_time`, `turn2_reasoning_time`, `turn2_receive_time` - Same for turn 2
-- [ ] `audio_chunks_received` - Count of audio chunks from agent
-- [ ] `transcript` - Text transcript if available
+- [x] `total_time` - Full test duration
+- [x] `turn1_time` - Turn 1 duration (first audio sent → response complete)
+- [x] `turn2_time` - Turn 2 duration
+- [x] `connect_time` - WebSocket connection time
+- [x] `turn1_send_time` - Time to send turn 1 audio
+- [x] `turn1_reasoning_time` - Time from send complete → first response (TTFB)
+- [x] `turn1_receive_time` - Time to receive full turn 1 response
+- [x] `turn2_send_time`, `turn2_reasoning_time`, `turn2_receive_time` - Same for turn 2
+- [x] `audio_chunks_received` - Count of audio chunks from agent
+- [x] `transcript` - Text transcript with user/assistant separation
 
 **Return format:**
 ```python
@@ -48,19 +49,19 @@ Create a production-ready canary system for the Python WebSocket stack that matc
 
 ---
 
-## Phase 2: CLI Wrapper
+## Phase 2: CLI Wrapper ✅
 
-### ☐ Task 2.1: Create `python-agent/canary_cli.py`
+### ✅ Task 2.1: Create `python-agent/canary_cli.py`
 **What:** Command-line interface for manual testing
 
 **Features:**
-- [ ] Parse CLI args: `--ws-url`, `--audio1`, `--audio2`, `--voice`, `--output-dir`
-- [ ] Load audio files from local filesystem
-- [ ] Convert audio to base64 chunks (match Nova Sonic format)
-- [ ] Call `canary_core.run_two_turn_test()`
-- [ ] Print results to console (timing breakdown, success/failure)
-- [ ] Save recordings to local directory (optional)
-- [ ] Exit with code 0 (success) or 1 (failure)
+- [x] Parse CLI args: `--ws-url`, `--audio1`, `--audio2`, `--voice`, `--output-dir`
+- [x] Load audio files from local filesystem
+- [x] Convert audio to base64 chunks (16kHz, 16-bit, mono, 100ms chunks)
+- [x] Call `canary_core.run_two_turn_test()`
+- [x] Print results to console (timing breakdown, success/failure, transcript)
+- [x] Save recordings to local directory (turn1_output.wav, turn2_output.wav)
+- [x] Exit with code 0 (success) or 1 (failure)
 
 **Usage example:**
 ```bash
@@ -72,8 +73,9 @@ python canary_cli.py \
   --output-dir ./recordings
 ```
 
-### ☐ Task 2.2: Rename existing `canary_client.py` → `canary_client_old.py`
-Keep as reference, replace with new CLI
+### ✅ Task 2.2: Rename existing `canary_client.py` → `canary_client_old.py`
+- [x] Kept old client as reference
+- [x] New CLI fully replaces old implementation
 
 ---
 
@@ -225,25 +227,26 @@ Create `cdk/lib/constructs/python-canary-dashboard.ts`:
 ## Success Criteria
 
 ✅ **CLI works:** Can run 2-turn test from command line  
-✅ **Lambda works:** Scheduled canary runs every 5 minutes  
-✅ **Metrics publish:** All timing metrics appear in CloudWatch  
-✅ **Recordings saved:** Audio and transcripts saved to S3  
+☐ **Lambda works:** Scheduled canary runs every 5 minutes  
+☐ **Metrics publish:** All timing metrics appear in CloudWatch  
+☐ **Recordings saved:** Audio and transcripts saved to S3  
 ✅ **Code shared:** 99% of logic in `canary_core.py`  
-✅ **Matches Node.js:** Same metrics, same functionality  
+✅ **Continuous audio stream:** Maintains single audio content throughout conversation  
+✅ **Proper turn boundaries:** Streams silence between turns to prevent interruption  
 
 ---
 
 ## Estimated Time
 
-- Phase 1 (Core): 2-3 hours
-- Phase 2 (CLI): 1 hour
+- ✅ Phase 1 (Core): 2-3 hours → **COMPLETED**
+- ✅ Phase 2 (CLI): 1 hour → **COMPLETED**
 - Phase 3 (Lambda): 1-2 hours
 - Phase 4 (CDK): 1-2 hours
 - Phase 5 (Testing): 1 hour
 - Phase 6 (Dashboard): 1 hour (optional)
 - Phase 7 (Docs): 30 minutes
 
-**Total: 7-10 hours**
+**Total: 7-10 hours** | **Completed: ~3 hours** | **Remaining: ~4-7 hours**
 
 ---
 

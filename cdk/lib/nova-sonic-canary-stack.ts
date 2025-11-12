@@ -11,7 +11,7 @@ interface SonicAgentPythonStackProps extends cdk.StackProps {
   readonly table?: dynamodb.ITable;
 }
 
-export class SonicAgentPythonStack extends cdk.Stack {
+export class NovaSonicCanaryStack extends cdk.Stack {
   public readonly webSocketUrl: string;
   public readonly handler: lambda.Function;
 
@@ -30,7 +30,7 @@ export class SonicAgentPythonStack extends cdk.Stack {
     // Python Lambda handler with bundled dependencies
     this.handler = new lambda.Function(this, 'AgentHandler', {
       runtime: lambda.Runtime.PYTHON_3_12,
-      handler: 'handler.lambda_handler',
+      handler: 'sonic_agent_lambda.lambda_handler',
       code: lambda.Code.fromAsset('../python-agent', {
         bundling: {
           image: lambda.Runtime.PYTHON_3_12.bundlingImage,

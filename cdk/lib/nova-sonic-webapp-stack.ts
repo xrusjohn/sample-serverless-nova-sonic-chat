@@ -29,7 +29,7 @@ interface CdkStackProps extends cdk.StackProps {
   readonly bedrockRegion?: string;
 }
 
-export class CdkStack extends cdk.Stack {
+export class NovaSonicWebappStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: CdkStackProps) {
     super(scope, id, { ...props, description: 'Serverless Nova Sonic Chat App (uksb-r1iyuqfyvk)' });
 

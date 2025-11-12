@@ -11,6 +11,7 @@ import json
 from pathlib import Path
 from datetime import datetime
 from canary_core import run_two_turn_test
+from audio_utils import audio_to_base64_chunks, strip_wav_header, create_wav_file
 
 
 def load_audio_file(file_path: str, chunk_size: int = 4096) -> list:
@@ -22,15 +23,8 @@ def load_audio_file(file_path: str, chunk_size: int = 4096) -> list:
     with open(path, 'rb') as f:
         audio_data = f.read()
     
-    # Skip WAV header if present (44 bytes)
-    if audio_data[:4] == b'RIFF':
-        audio_data = audio_data[44:]
-    
-    # Convert to base64 and chunk
-    audio_b64 = base64.b64encode(audio_data).decode('utf-8')
-    chunks = [audio_b64[i:i+chunk_size] for i in range(0, len(audio_b64), chunk_size)]
-    
-    return chunks
+    audio_data = strip_wav_header(audio_data)
+    return audio_to_base64_chunks(audio_data, chunk_size)
 
 
 def save_audio_output(audio_chunks: list, output_path: str, sample_rate: int = 24000):
@@ -38,33 +32,9 @@ def save_audio_output(audio_chunks: list, output_path: str, sample_rate: int = 2
     if not audio_chunks:
         return
     
-    # Decode base64 chunks
-    audio_data = b''.join([base64.b64decode(chunk) for chunk in audio_chunks])
-    
-    # Create WAV header (16-bit PCM, mono)
-    import struct
-    channels = 1
-    sample_width = 2  # 16-bit
-    data_size = len(audio_data)
-    
-    header = struct.pack('<4sI4s4sIHHIIHH4sI',
-        b'RIFF',
-        data_size + 36,
-        b'WAVE',
-        b'fmt ',
-        16,  # fmt chunk size
-        1,   # PCM
-        channels,
-        sample_rate,
-        sample_rate * channels * sample_width,
-        channels * sample_width,
-        sample_width * 8,
-        b'data',
-        data_size
-    )
-    
+    wav_data = create_wav_file(audio_chunks, sample_rate)
     with open(output_path, 'wb') as f:
-        f.write(header + audio_data)
+        f.write(wav_data)
 
 
 def print_results(result: dict):
@@ -126,6 +96,9 @@ Examples:
 
   # Custom voice
   python canary_cli.py --ws-url wss://... --voice ruth
+
+  # Publish metrics to CloudWatch
+  python canary_cli.py --ws-url wss://... --publish-metrics --aws-region us-east-1
         """
     )
     
@@ -135,6 +108,8 @@ Examples:
     parser.add_argument('--voice', default='matthew', help='Voice ID (matthew, ruth, tiffany)')
     parser.add_argument('--output-dir', help='Directory to save recordings')
     parser.add_argument('--turn-delay', type=float, default=2.0, help='Delay between turns (seconds)')
+    parser.add_argument('--publish-metrics', action='store_true', help='Publish metrics to CloudWatch')
+    parser.add_argument('--aws-region', help='AWS region for CloudWatch (default: from boto3 session)')
     
     args = parser.parse_args()
     
@@ -167,6 +142,20 @@ Examples:
         
         # Print results
         print_results(result)
+        
+        # Publish metrics to CloudWatch if requested
+        if args.publish_metrics:
+            try:
+                from cloudwatch_metrics import publish_canary_metrics
+                print("📊 Publishing metrics to CloudWatch...")
+                publish_canary_metrics(
+                    metrics=result['metrics'],
+                    success=result['success'],
+                    region=args.aws_region
+                )
+            except Exception as e:
+                print(f"⚠️  Failed to publish metrics: {e}")
+                print("   (Make sure AWS credentials are configured)")
         
         # Save recordings if requested
         if args.output_dir and result['success']:

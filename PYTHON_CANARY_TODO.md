@@ -213,78 +213,123 @@ boto3>=1.34.0
 - No cold start issues
 
 ### ✅ Task 4.4: Architecture Decision Made
-**Decision:** Hybrid approach with future ECS migration
+**Decision:** App Runner/ECS for agent, Lambda for canary
 
-**Phase 1: Lambda Canary (Current)**
-- ✅ Canary: Lambda + EventBridge (simple, cost-effective for monitoring)
-- ✅ Agent: Lambda + API Gateway (existing, works for demo/dev)
-- ✅ Rationale: Serverless perfect for periodic canary testing
+**CRITICAL FINDING:** API Gateway WebSocket + Lambda doesn't work for Sonic
+- API Gateway invokes Lambda per WebSocket message
+- Can't maintain persistent Sonic connection across messages
+- Would need to reconnect for every audio chunk (unusable)
 
-**Phase 2: ECS Migration (Future)**
-- 🔄 Agent: Migrate to ECS Fargate (production traffic, no timeouts)
-- 🔄 Load Testing: ECS tasks for multi-client load generation
-- 🔄 Evaluation: ECS for complex multi-turn agent testing
-- ✅ Rationale: ECS better for sustained connections, load testing, evaluation
+**New Architecture:**
+- ✅ Agent: App Runner or ECS Fargate (WebSocket server)
+  - Persistent Python process
+  - Maintains Sonic connection throughout conversation
+  - No timeout limits
+- ✅ Canary: Lambda + EventBridge (WebSocket client)
+  - Connects directly to agent WebSocket endpoint
+  - Simple, cost-effective monitoring
+- ❌ Kill: Agent Lambda + API Gateway WebSocket (doesn't work)
+
+**Deployment Options:**
+
+**Option 1: App Runner (Recommended)**
+- Simplest deployment
+- Auto-scaling built-in
+- Automatic WebSocket support
+- Less infrastructure management
+
+**Option 2: ECS Fargate**
+- More control (VPC, ALB, scaling)
+- Better for production at scale
+- More complex setup
 
 **Growth Path:**
 ```
-Canary CLI → Load Testing CLI → Multi-turn Evaluation CLI
-     ↓              ↓                    ↓
- Lambda Canary → ECS Load Tests → ECS Evaluation Suite
+Agent: App Runner → ECS Fargate (if needed)
+Canary: Lambda → ECS Scheduled Tasks (for load testing)
 ```
-
-**Benefits:**
-- Start simple with Lambda canary
-- Build ECS foundation for future growth
-- Same `canary_core.py` works in both environments
-- CLI grows into comprehensive testing suite
 
 ---
 
 ## Phase 5: CDK Infrastructure
 
-**Strategy:** Implement both Lambda canary AND ECS foundation
+**Strategy:** App Runner agent + Lambda canary
 
-**Current State:**
-✅ `NovaSonicCanaryStack` exists with Python WebSocket API and agent Lambda  
-✅ Stack has DynamoDB table, IAM permissions, API Gateway setup  
-❌ **Missing:** Python canary Lambda function in same stack  
+### ✅ Task 5.1: Python WebSocket Agent Server (Already Exists!)
+**What:** Use existing `python-agent/sonic_agent_local.py`
 
-### ✅ Task 5.1: Add Lambda Canary to `nova-sonic-canary-stack.ts`
-**What:** Add canary Lambda function for immediate monitoring
+**Already implemented:**
+- [x] WebSocket server using `websockets` library
+- [x] Listen on configurable port (PORT env var, default 9000)
+- [x] Handle multiple concurrent client connections
+- [x] For each client connection:
+  - [x] Establish WebSocket to Bedrock Sonic
+  - [x] Proxy messages bidirectionally
+  - [x] Maintain connection state
+- [x] Graceful shutdown handling
+- [ ] TODO: Add health check endpoint (HTTP GET /health) for App Runner/ALB
 
-**Added to stack:**
-- [x] Python canary Lambda function:
+### ☐ Task 5.2: Create Dockerfile
+**What:** Create `python-agent/Dockerfile`
+
+**Contents:**
+```dockerfile
+FROM python:3.12-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+COPY . .
+EXPOSE 8080
+ENV PORT=8080
+CMD ["python", "sonic_agent_local.py"]
+```
+
+### ☐ Task 5.3: Create New CDK Stack - `PythonSonicStack`
+**What:** Create `cdk/lib/python-sonic-stack.ts`
+
+**Option A: App Runner (Start here)**
+- [ ] ECR repository for agent image
+- [ ] Docker image asset from `python-agent/`
+- [ ] App Runner service:
+  - Source: ECR
+  - Port: 8080
+  - Auto-scaling: 1-10 instances
+  - Environment variables:
+    - `PORT=8080`
+    - `BEDROCK_REGION=us-east-1`
+- [ ] IAM role: Bedrock InvokeModel permissions
+- [ ] Output: App Runner WebSocket URL (wss://...)
+
+**Option B: ECS Fargate (Future)**
+- [ ] ECS Cluster
+- [ ] Task definition (agent container)
+- [ ] ECS Service with auto-scaling
+- [ ] ALB with WebSocket support
+- [ ] Target group with sticky sessions
+
+### ☐ Task 5.4: Add Lambda Canary to Stack
+**What:** Add canary Lambda to `PythonSonicStack`
+
+**Features:**
+- [ ] Lambda function:
   - Runtime: Python 3.12
   - Handler: `sonic_canary_lambda.handler`
   - Timeout: 5 minutes
   - Memory: 512 MB
-  - Code: `python-agent/` directory (same as agent)
   - Environment variables:
-    - `WS_URL`: Uses `this.webSocketUrl` from existing stack
-    - `AUDIO_BUCKET`: `sonic-canary-audio-441262788356-us-east-1`
-    - `AUDIO_FILE1`: `turn1.wav`
-    - `AUDIO_FILE2`: `turn2.wav`
-    - `RECORDINGS_BUCKET`: `sonic-canary-transcripts-441262788356-us-east-1`
-    - `VOICE_ID`: `matthew`
-- [x] IAM permissions: S3 read/write, CloudWatch metrics
-- [x] EventBridge rule: Schedule every 5 minutes
-- [x] Stack outputs: `PythonCanaryFunctionName`S_URL`: Use `this.webSocketUrl` from existing stack
-    - `AUDIO_BUCKET`: `sonic-canary-audio-441262788356-us-east-1`
-    - `AUDIO_FILE1`: `turn1.wav`
-    - `AUDIO_FILE2`: `turn2.wav`
-    - `RECORDINGS_BUCKET`: `sonic-canary-transcripts-441262788356-us-east-1`
-    - `VOICE_ID`: `matthew`
-- [ ] IAM permissions: S3 read/write, CloudWatch metrics
-- [ ] EventBridge rule: Schedule every 5 minutes
+    - `WS_URL`: App Runner/ECS WebSocket URL
+    - `AUDIO_BUCKET`, `AUDIO_FILE1`, `AUDIO_FILE2`
+    - `RECORDINGS_BUCKET`, `VOICE_ID`
+- [ ] IAM permissions: S3, CloudWatch, Bedrock
+- [ ] EventBridge rule: Every 5 minutes
+- [ ] Stack outputs: Canary function name
 
-### ☐ Task 5.2: Add ECS Foundation (Future-ready)
-**What:** Create ECS infrastructure for load testing and evaluation
+### ☐ Task 5.5: Remove Old Lambda Agent Stack
+**What:** Delete `NovaSonicCanaryStack` or remove agent Lambda
 
-**Add to stack:**
-- [ ] ECS Cluster for Python services
-- [ ] Task definition using same `python-agent/` code
-- [ ] Service for WebSocket agent (optional, for production)
+- [ ] Remove API Gateway WebSocket
+- [ ] Remove agent Lambda function
+- [ ] Keep only if reusing S3 buckets/DynamoDBroduction)
 - [ ] Task definition for load testing (future)
 - [ ] IAM roles for ECS tasks
 - [ ] ALB for WebSocket load balancing (when needed)

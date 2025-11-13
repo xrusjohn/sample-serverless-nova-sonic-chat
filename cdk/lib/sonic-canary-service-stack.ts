@@ -53,6 +53,7 @@ export class SonicCanaryServiceStack extends cdk.Stack {
       actions: [
         'xray:PutTraceSegments',
         'xray:PutTelemetryRecords',
+        'xray:GetSamplingRules',
         'cloudwatch:PutMetricData',
       ],
       resources: ['*'],

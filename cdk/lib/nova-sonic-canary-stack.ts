@@ -1,12 +1,9 @@
 import * as cdk from 'aws-cdk-lib';
 import { Construct } from 'constructs';
-import * as apigatewayv2 from 'aws-cdk-lib/aws-apigatewayv2';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as iam from 'aws-cdk-lib/aws-iam';
-import { WebSocketLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
 import { CanaryDashboard } from './constructs/canary-dashboard';
-import { EcsAgent } from './constructs/ecs-agent';
 
 
 interface SonicAgentPythonStackProps extends cdk.StackProps {
@@ -15,9 +12,6 @@ interface SonicAgentPythonStackProps extends cdk.StackProps {
 }
 
 export class NovaSonicCanaryStack extends cdk.Stack {
-  public readonly webSocketUrl: string;
-  public readonly handler: lambda.Function;
-  public readonly ecsWebSocketUrl: string;
 
 
   constructor(scope: Construct, id: string, props: SonicAgentPythonStackProps) {
@@ -31,79 +25,6 @@ export class NovaSonicCanaryStack extends cdk.Stack {
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
-
-    // Python Lambda handler with bundled dependencies
-    this.handler = new lambda.Function(this, 'AgentHandler', {
-      runtime: lambda.Runtime.PYTHON_3_12,
-      handler: 'sonic_agent_lambda.lambda_handler',
-      code: lambda.Code.fromAsset('../python-agent', {
-        bundling: {
-          image: lambda.Runtime.PYTHON_3_12.bundlingImage,
-          command: [
-            'bash', '-c',
-            'pip install -r requirements.txt -t /asset-output && cp -au . /asset-output'
-          ],
-        },
-      }),
-      timeout: cdk.Duration.minutes(15),
-      memorySize: 1024,
-      environment: {
-        TABLE_NAME: table.tableName,
-        BEDROCK_REGION: bedrockRegion,
-      },
-    });
-
-    // Grant permissions
-    table.grantReadWriteData(this.handler);
-    this.handler.addToRolePolicy(
-      new iam.PolicyStatement({
-        effect: iam.Effect.ALLOW,
-        actions: ['bedrock:InvokeModelWithResponseStream', 'bedrock:InvokeModel'],
-        resources: [`arn:aws:bedrock:${bedrockRegion}::foundation-model/*`],
-      })
-    );
-
-    // WebSocket API
-    const webSocketApi = new apigatewayv2.WebSocketApi(this, 'WebSocketApi', {
-      connectRouteOptions: {
-        integration: new WebSocketLambdaIntegration('ConnectIntegration', this.handler),
-      },
-      disconnectRouteOptions: {
-        integration: new WebSocketLambdaIntegration('DisconnectIntegration', this.handler),
-      },
-      defaultRouteOptions: {
-        integration: new WebSocketLambdaIntegration('DefaultIntegration', this.handler),
-      },
-    });
-
-    const stage = new apigatewayv2.WebSocketStage(this, 'ProductionStage', {
-      webSocketApi,
-      stageName: 'production',
-      autoDeploy: true,
-    });
-
-    // Grant API Gateway permission to invoke Lambda
-    this.handler.addPermission('ApiGatewayInvoke', {
-      principal: new iam.ServicePrincipal('apigateway.amazonaws.com'),
-      sourceArn: `arn:aws:execute-api:${this.region}:${this.account}:${webSocketApi.apiId}/*`,
-    });
-
-    // Grant Lambda permission to post to connections
-    this.handler.addToRolePolicy(
-      new iam.PolicyStatement({
-        effect: iam.Effect.ALLOW,
-        actions: ['execute-api:ManageConnections'],
-        resources: [`arn:aws:execute-api:${this.region}:${this.account}:${webSocketApi.apiId}/*`],
-      })
-    );
-
-    this.webSocketUrl = stage.url;
-
-    // ECS Fargate Agent
-    const ecsAgent = new EcsAgent(this, 'EcsAgent', {
-      bedrockRegion,
-    });
-    this.ecsWebSocketUrl = ecsAgent.serviceUrl;
 
 
 
@@ -123,7 +44,6 @@ export class NovaSonicCanaryStack extends cdk.Stack {
       timeout: cdk.Duration.minutes(5),
       memorySize: 512,
       environment: {
-        WS_URL: this.webSocketUrl,
         AUDIO_BUCKET: 'sonic-canary-audio-441262788356-us-east-1',
         AUDIO_FILE1: 'turn1.wav',
         AUDIO_FILE2: 'turn2.wav',
@@ -163,16 +83,6 @@ export class NovaSonicCanaryStack extends cdk.Stack {
     });
 
     canaryRule.addTarget(new cdk.aws_events_targets.LambdaFunction(canaryFunction));
-
-    new cdk.CfnOutput(this, 'LambdaWebSocketURL', {
-      value: this.webSocketUrl,
-      description: 'Lambda + API Gateway WebSocket URL',
-    });
-
-    new cdk.CfnOutput(this, 'EcsWebSocketURL', {
-      value: this.ecsWebSocketUrl,
-      description: 'ECS Fargate WebSocket URL',
-    });
 
 
 

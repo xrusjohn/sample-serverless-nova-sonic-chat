@@ -12,42 +12,33 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 import { Construct } from 'constructs';
 import * as path from 'path';
 
-export interface SonicCanaryEcsStackProps extends cdk.StackProps {
+export interface SonicCanaryServiceStackProps extends cdk.StackProps {
+  vpc: ec2.IVpc;
+  cluster: ecs.ICluster;
   bedrockRegion?: string;
   canarySchedule?: string;
   audioBucket?: string;
   recordingsBucket?: string;
 }
 
-export class SonicCanaryEcsStack extends cdk.Stack {
+export class SonicCanaryServiceStack extends cdk.Stack {
   public readonly agentUrl: string;
   public readonly canaryFunction: lambda.Function;
 
-  constructor(scope: Construct, id: string, props?: SonicCanaryEcsStackProps) {
+  constructor(scope: Construct, id: string, props: SonicCanaryServiceStackProps) {
     super(scope, id, props);
 
-    const bedrockRegion = props?.bedrockRegion || 'us-east-1';
-    const canarySchedule = props?.canarySchedule || 'rate(5 minutes)';
+    const bedrockRegion = props.bedrockRegion || 'us-east-1';
+    const canarySchedule = props.canarySchedule || 'rate(5 minutes)';
 
-    // VPC
-    const vpc = new ec2.Vpc(this, 'Vpc', {
-      maxAzs: 2,
-      natGateways: 1,
-    });
+    const vpc = props.vpc;
+    const cluster = props.cluster;
 
-    // ECS Cluster
-    const cluster = new ecs.Cluster(this, 'Cluster', {
-      vpc,
-      containerInsights: true,
-    });
-
-    // Build Docker image
     const agentImage = new ecr_assets.DockerImageAsset(this, 'AgentImage', {
       directory: path.join(__dirname, '../../python-agent'),
       platform: ecr_assets.Platform.LINUX_AMD64,
     });
 
-    // Task execution role
     const taskRole = new iam.Role(this, 'TaskRole', {
       assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
     });
@@ -57,20 +48,13 @@ export class SonicCanaryEcsStack extends cdk.Stack {
       resources: ['*'],
     }));
 
-    // Task definition
     const taskDefinition = new ecs.FargateTaskDefinition(this, 'TaskDef', {
       memoryLimitMiB: 2048,
       cpu: 1024,
       taskRole,
-      executionRole: new iam.Role(this, 'TaskExecutionRole', {
-        assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
-        managedPolicies: [
-          iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AmazonECSTaskExecutionRolePolicy'),
-        ],
-      }),
     });
 
-    const container = taskDefinition.addContainer('AgentContainer', {
+    taskDefinition.addContainer('AgentContainer', {
       image: ecs.ContainerImage.fromDockerImageAsset(agentImage),
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: 'sonic-agent',
@@ -78,23 +62,13 @@ export class SonicCanaryEcsStack extends cdk.Stack {
       }),
       environment: {
         BEDROCK_REGION: bedrockRegion,
-        PORT: '9000',
       },
       portMappings: [{
         containerPort: 9000,
         protocol: ecs.Protocol.TCP,
-        name: 'http',
       }],
-      healthCheck: {
-        command: ['CMD-SHELL', 'python -c "import socket; s=socket.socket(); s.connect((\"localhost\", 9000)); s.close()" || exit 1'],
-        interval: cdk.Duration.seconds(30),
-        timeout: cdk.Duration.seconds(5),
-        retries: 3,
-        startPeriod: cdk.Duration.seconds(60),
-      },
     });
 
-    // ALB
     const alb = new elbv2.ApplicationLoadBalancer(this, 'ALB', {
       vpc,
       internetFacing: true,
@@ -105,7 +79,6 @@ export class SonicCanaryEcsStack extends cdk.Stack {
       protocol: elbv2.ApplicationProtocol.HTTP,
     });
 
-    // Target group with sticky sessions for WebSocket
     const targetGroup = new elbv2.ApplicationTargetGroup(this, 'TargetGroup', {
       vpc,
       port: 9000,
@@ -115,10 +88,9 @@ export class SonicCanaryEcsStack extends cdk.Stack {
         path: '/health',
         protocol: elbv2.Protocol.HTTP,
         healthyThresholdCount: 2,
-        unhealthyThresholdCount: 5,
-        timeout: cdk.Duration.seconds(10),
+        unhealthyThresholdCount: 3,
+        timeout: cdk.Duration.seconds(5),
         interval: cdk.Duration.seconds(30),
-        port: '9000',
       },
       stickinessCookieDuration: cdk.Duration.hours(1),
     });
@@ -127,36 +99,33 @@ export class SonicCanaryEcsStack extends cdk.Stack {
       targetGroups: [targetGroup],
     });
 
-    // ECS Service
     const service = new ecs.FargateService(this, 'Service', {
       cluster,
       taskDefinition,
       desiredCount: 1,
       assignPublicIp: true,
-      healthCheckGracePeriod: cdk.Duration.seconds(60),
+      minHealthyPercent: 0,
+      maxHealthyPercent: 200,
     });
 
     service.attachToApplicationTargetGroup(targetGroup);
 
-    // WebSocket URL (ws:// for HTTP, wss:// for HTTPS)
     this.agentUrl = `ws://${alb.loadBalancerDnsName}`;
 
-    // S3 buckets
-    const audioBucket = props?.audioBucket 
+    const audioBucket = props.audioBucket 
       ? s3.Bucket.fromBucketName(this, 'AudioBucket', props.audioBucket)
       : new s3.Bucket(this, 'AudioBucket', {
           bucketName: `sonic-canary-audio-${this.account}-${this.region}`,
           removalPolicy: cdk.RemovalPolicy.RETAIN,
         });
 
-    const recordingsBucket = props?.recordingsBucket
+    const recordingsBucket = props.recordingsBucket
       ? s3.Bucket.fromBucketName(this, 'RecordingsBucket', props.recordingsBucket)
       : new s3.Bucket(this, 'RecordingsBucket', {
           bucketName: `sonic-canary-recordings-${this.account}-${this.region}`,
           removalPolicy: cdk.RemovalPolicy.RETAIN,
         });
 
-    // Lambda canary
     this.canaryFunction = new lambda.Function(this, 'CanaryFunction', {
       runtime: lambda.Runtime.PYTHON_3_12,
       handler: 'sonic_canary_lambda.handler',
@@ -181,26 +150,21 @@ export class SonicCanaryEcsStack extends cdk.Stack {
       resources: ['*'],
     }));
 
-    // EventBridge rule
     const canaryRule = new events.Rule(this, 'CanaryRule', {
       schedule: events.Schedule.expression(canarySchedule),
     });
     canaryRule.addTarget(new targets.LambdaFunction(this.canaryFunction));
 
-    // Outputs
     new cdk.CfnOutput(this, 'AgentWebSocketUrl', {
       value: this.agentUrl,
-      description: 'WebSocket URL for Sonic agent',
     });
 
     new cdk.CfnOutput(this, 'LoadBalancerDns', {
       value: alb.loadBalancerDnsName,
-      description: 'ALB DNS name',
     });
 
     new cdk.CfnOutput(this, 'CanaryFunctionName', {
       value: this.canaryFunction.functionName,
-      description: 'Lambda function name for canary',
     });
   }
 }

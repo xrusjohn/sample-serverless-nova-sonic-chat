@@ -7,7 +7,7 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import { WebSocketLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
 import { CanaryDashboard } from './constructs/canary-dashboard';
 import { EcsAgent } from './constructs/ecs-agent';
-import { AppRunnerAgent } from './constructs/apprunner-agent';
+
 
 interface SonicAgentPythonStackProps extends cdk.StackProps {
   readonly bedrockRegion?: string;
@@ -18,7 +18,7 @@ export class NovaSonicCanaryStack extends cdk.Stack {
   public readonly webSocketUrl: string;
   public readonly handler: lambda.Function;
   public readonly ecsWebSocketUrl: string;
-  public readonly appRunnerWebSocketUrl: string;
+
 
   constructor(scope: Construct, id: string, props: SonicAgentPythonStackProps) {
     super(scope, id, props);
@@ -105,11 +105,7 @@ export class NovaSonicCanaryStack extends cdk.Stack {
     });
     this.ecsWebSocketUrl = ecsAgent.serviceUrl;
 
-    // App Runner Agent
-    const appRunnerAgent = new AppRunnerAgent(this, 'AppRunnerAgent', {
-      bedrockRegion,
-    });
-    this.appRunnerWebSocketUrl = appRunnerAgent.serviceUrl;
+
 
     // Python Canary Lambda Function
     const canaryFunction = new lambda.Function(this, 'PythonCanaryFunction', {
@@ -178,10 +174,7 @@ export class NovaSonicCanaryStack extends cdk.Stack {
       description: 'ECS Fargate WebSocket URL',
     });
 
-    new cdk.CfnOutput(this, 'AppRunnerWebSocketURL', {
-      value: this.appRunnerWebSocketUrl,
-      description: 'App Runner WebSocket URL',
-    });
+
 
     new cdk.CfnOutput(this, 'PythonCanaryFunctionName', {
       value: canaryFunction.functionName,

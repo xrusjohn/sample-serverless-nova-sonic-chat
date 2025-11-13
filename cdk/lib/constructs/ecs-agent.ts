@@ -53,7 +53,7 @@ export class EcsAgent extends Construct {
         PORT: '9000',
       },
       healthCheck: {
-        command: ['CMD-SHELL', 'python -c "import socket; s=socket.socket(); s.connect((\'localhost\', 9000)); s.close()" || exit 1'],
+        command: ['CMD-SHELL', 'curl -f http://localhost:9000/health || exit 1'],
         interval: cdk.Duration.seconds(30),
         timeout: cdk.Duration.seconds(5),
         retries: 3,
@@ -73,6 +73,9 @@ export class EcsAgent extends Construct {
       desiredCount: 1,
       assignPublicIp: true,
       healthCheckGracePeriod: cdk.Duration.seconds(60),
+      circuitBreaker: {
+        rollback: true,
+      },
     });
 
     // Application Load Balancer
@@ -92,11 +95,13 @@ export class EcsAgent extends Construct {
       protocol: elbv2.ApplicationProtocol.HTTP,
       targets: [this.service],
       healthCheck: {
-        path: '/',
+        path: '/health',
+        port: 'traffic-port',
+        protocol: elbv2.Protocol.HTTP,
         interval: cdk.Duration.seconds(30),
         timeout: cdk.Duration.seconds(5),
         healthyThresholdCount: 2,
-        unhealthyThresholdCount: 3,
+        unhealthyThresholdCount: 2,
       },
       stickinessCookieDuration: cdk.Duration.hours(1),
       deregistrationDelay: cdk.Duration.seconds(30),
@@ -105,6 +110,9 @@ export class EcsAgent extends Construct {
     // Enable sticky sessions
     targetGroup.setAttribute('stickiness.enabled', 'true');
     targetGroup.setAttribute('stickiness.type', 'lb_cookie');
+
+    // Set ALB idle timeout for WebSocket connections
+    alb.setAttribute('idle_timeout.timeout_seconds', '3600');
 
     // WebSocket URL (ws:// not wss:// since ALB is HTTP)
     this.serviceUrl = `ws://${alb.loadBalancerDnsName}`;

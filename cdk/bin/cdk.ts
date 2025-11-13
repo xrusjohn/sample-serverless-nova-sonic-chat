@@ -2,7 +2,8 @@
 import * as cdk from 'aws-cdk-lib';
 import { NovaSonicWebappStack } from '../lib/nova-sonic-webapp-stack';
 import { NovaSonicCanaryStack } from '../lib/nova-sonic-canary-stack';
-import { SonicCanaryEcsStack } from '../lib/sonic-canary-ecs-stack';
+import { SonicCanaryFoundationStack } from '../lib/sonic-canary-foundation-stack';
+import { SonicCanaryServiceStack } from '../lib/sonic-canary-service-stack';
 import { AwsSolutionsChecks } from 'cdk-nag';
 import { Aspects } from 'aws-cdk-lib';
 
@@ -28,12 +29,22 @@ new NovaSonicCanaryStack(app, 'NovaSonicCanaryStack', {
   bedrockRegion,
 });
 
-// Sonic Canary (ECS Fargate agent + Lambda canary client)
-new SonicCanaryEcsStack(app, 'SonicCanaryEcsStack', {
+// Sonic Canary Foundation (VPC + ECS Cluster)
+const foundationStack = new SonicCanaryFoundationStack(app, 'SonicCanaryFoundationStack', {
   env: {
     account: process.env.CDK_DEFAULT_ACCOUNT,
     region: process.env.CDK_DEFAULT_REGION,
   },
+});
+
+// Sonic Canary Service (ECS Fargate agent + Lambda canary client)
+new SonicCanaryServiceStack(app, 'SonicCanaryServiceStack', {
+  env: {
+    account: process.env.CDK_DEFAULT_ACCOUNT,
+    region: process.env.CDK_DEFAULT_REGION,
+  },
+  vpc: foundationStack.vpc,
+  cluster: foundationStack.cluster,
   bedrockRegion,
   canarySchedule: 'rate(5 minutes)',
   audioBucket: 'sonic-canary-audio-441262788356-us-east-1',

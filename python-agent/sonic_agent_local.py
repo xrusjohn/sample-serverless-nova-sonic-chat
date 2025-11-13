@@ -10,8 +10,7 @@ import websockets
 import json
 import os
 import warnings
-from websockets.asyncio.server import serve
-from websockets.http11 import Response
+from http import HTTPStatus
 from s2s_session_manager_full import S2sSessionManager
 
 # Force unbuffered output
@@ -173,20 +172,22 @@ async def forward_bedrock_to_client(websocket, session: S2sSessionManager):
         import traceback
         traceback.print_exc()
 
-async def process_request(connection, request):
-    """Handle HTTP requests for health checks, allow WebSocket upgrades"""
-    if request.path in ['/', '/health']:
-        return Response(200, 'OK', b'OK\n')
-    return None  # Allow WebSocket upgrade
+async def health_check_handler(connection, request):
+    """Intercept HTTP requests BEFORE WebSocket upgrade"""
+    if request.path == '/health':
+        return connection.respond(HTTPStatus.OK, '{"status": "healthy"}\n')
+    return None
 
 async def run_server(host='0.0.0.0', port=None):
     """Run WebSocket server with HTTP health check support"""
     port = port or int(os.environ.get('PORT', 9000))
+    
     print(f"Starting Nova Sonic WebSocket agent on ws://{host}:{port}")
     
-    async with serve(handle_client, host, port, process_request=process_request):
-        print(f"[AGENT] Server ready on ws://{host}:{port} (HTTP health: /, /health)")
-        await asyncio.Future()
+    async with websockets.serve(handle_client, host, port, process_request=health_check_handler):
+        print(f"[AGENT] WebSocket server ready on ws://{host}:{port}")
+        print(f"[AGENT] Health check available on http://{host}:{port}/health")
+        await asyncio.Future()  # run forever
 
 def handle_exception(loop, context):
     """Custom exception handler to suppress AWS CRT cleanup errors"""

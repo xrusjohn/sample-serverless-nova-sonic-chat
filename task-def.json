@@ -1,0 +1,97 @@
+{
+    "taskDefinitionArn": "arn:aws:ecs:us-east-1:441262788356:task-definition/SonicCanaryServiceStackTaskDef98E4C97C:1",
+    "containerDefinitions": [
+        {
+            "name": "AgentContainer",
+            "image": "441262788356.dkr.ecr.us-east-1.amazonaws.com/cdk-hnb659fds-container-assets-441262788356-us-east-1:322e5a01d6b4d3b2348e4adc58c5d28bede61580dd312872f620b1f3bbf234b2",
+            "cpu": 0,
+            "links": [],
+            "portMappings": [
+                {
+                    "containerPort": 9000,
+                    "hostPort": 9000,
+                    "protocol": "tcp"
+                }
+            ],
+            "essential": true,
+            "entryPoint": [],
+            "command": [],
+            "environment": [
+                {
+                    "name": "BEDROCK_REGION",
+                    "value": "us-east-1"
+                }
+            ],
+            "environmentFiles": [],
+            "mountPoints": [],
+            "volumesFrom": [],
+            "secrets": [],
+            "dnsServers": [],
+            "dnsSearchDomains": [],
+            "extraHosts": [],
+            "dockerSecurityOptions": [],
+            "dockerLabels": {},
+            "ulimits": [],
+            "logConfiguration": {
+                "logDriver": "awslogs",
+                "options": {
+                    "awslogs-group": "SonicCanaryServiceStack-TaskDefAgentContainerLogGroup48A7631D-1UNSmvz5zRbd",
+                    "awslogs-region": "us-east-1",
+                    "awslogs-stream-prefix": "sonic-agent"
+                },
+                "secretOptions": []
+            },
+            "systemControls": [],
+            "credentialSpecs": []
+        }
+    ],
+    "family": "SonicCanaryServiceStackTaskDef98E4C97C",
+    "taskRoleArn": "arn:aws:iam::441262788356:role/SonicCanaryServiceStack-TaskRole30FC0FBB-e6H9R39T35qu",
+    "executionRoleArn": "arn:aws:iam::441262788356:role/SonicCanaryServiceStack-TaskDefExecutionRoleB4775C9-bq4rd0mqvA72",
+    "networkMode": "awsvpc",
+    "revision": 1,
+    "volumes": [],
+    "status": "ACTIVE",
+    "requiresAttributes": [
+        {
+            "name": "com.amazonaws.ecs.capability.logging-driver.awslogs"
+        },
+        {
+            "name": "ecs.capability.execution-role-awslogs"
+        },
+        {
+            "name": "com.amazonaws.ecs.capability.ecr-auth"
+        },
+        {
+            "name": "com.amazonaws.ecs.capability.docker-remote-api.1.19"
+        },
+        {
+            "name": "com.amazonaws.ecs.capability.docker-remote-api.1.17"
+        },
+        {
+            "name": "com.amazonaws.ecs.capability.task-iam-role"
+        },
+        {
+            "name": "ecs.capability.execution-role-ecr-pull"
+        },
+        {
+            "name": "com.amazonaws.ecs.capability.docker-remote-api.1.18"
+        },
+        {
+            "name": "ecs.capability.task-eni"
+        }
+    ],
+    "placementConstraints": [],
+    "compatibilities": [
+        "EC2",
+        "FARGATE",
+        "MANAGED_INSTANCES"
+    ],
+    "requiresCompatibilities": [
+        "FARGATE"
+    ],
+    "cpu": "1024",
+    "memory": "2048",
+    "registeredAt": "2025-11-13T00:19:54.108000+00:00",
+    "registeredBy": "arn:aws:sts::441262788356:assumed-role/cdk-hnb659fds-cfn-exec-role-441262788356-us-east-1/AWSCloudFormation"
+}

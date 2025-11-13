@@ -55,6 +55,9 @@ export class SonicCanaryServiceStack extends cdk.Stack {
         'xray:PutTelemetryRecords',
         'xray:GetSamplingRules',
         'cloudwatch:PutMetricData',
+        'logs:CreateLogGroup',
+        'logs:CreateLogStream',
+        'logs:PutLogEvents',
       ],
       resources: ['*'],
     }));
@@ -128,11 +131,17 @@ export class SonicCanaryServiceStack extends cdk.Stack {
       }),
     });
 
+    const agentLogGroup = new logs.LogGroup(this, 'AgentLogGroup', {
+      logGroupName: '/ecs/sonic-agent',
+      retention: logs.RetentionDays.ONE_WEEK,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
     const agentContainer = taskDefinition.addContainer('AgentContainer', {
       image: ecs.ContainerImage.fromDockerImageAsset(agentImage),
       logging: ecs.LogDrivers.awsLogs({
+        logGroup: agentLogGroup,
         streamPrefix: 'sonic-agent',
-        logRetention: logs.RetentionDays.ONE_WEEK,
       }),
       environment: {
         BEDROCK_REGION: bedrockRegion,
@@ -147,7 +156,7 @@ export class SonicCanaryServiceStack extends cdk.Stack {
         OTEL_AWS_APPLICATION_SIGNALS_EXPORTER_ENDPOINT: 'http://localhost:4316/v1/metrics',
         OTEL_METRICS_EXPORTER: 'none',
         OTEL_AWS_APPLICATION_SIGNALS_ENABLED: 'true',
-        OTEL_RESOURCE_ATTRIBUTES: 'service.name=sonic-agent',
+        OTEL_RESOURCE_ATTRIBUTES: 'service.name=sonic-agent,aws.log.group.names=/ecs/sonic-agent',
         OTEL_PROPAGATORS: 'tracecontext,baggage,b3,xray',
       },
       portMappings: [{

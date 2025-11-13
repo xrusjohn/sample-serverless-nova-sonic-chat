@@ -47,14 +47,36 @@ class S2sSessionManager:
         if not HAS_CUSTOM_SDK:
             raise ImportError("Custom Bedrock SDK not installed")
         
+        import boto3
+        import os
         from smithy_aws_core.identity.environment import EnvironmentCredentialsResolver
         
+        endpoint = f"https://bedrock-runtime.{self.region}.amazonaws.com"
+        print(f"[SESSION] Creating Bedrock client for endpoint: {endpoint}")
+        
+        # Get credentials from boto3 and set as environment variables for the custom SDK
+        boto3_session = boto3.Session()
+        boto3_creds = boto3_session.get_credentials()
+        
+        if not boto3_creds:
+            raise Exception("No AWS credentials found. Configure AWS credentials.")
+        
+        # Set environment variables for the custom SDK
+        os.environ['AWS_ACCESS_KEY_ID'] = boto3_creds.access_key
+        os.environ['AWS_SECRET_ACCESS_KEY'] = boto3_creds.secret_key
+        if boto3_creds.token:
+            os.environ['AWS_SESSION_TOKEN'] = boto3_creds.token
+        
+        credential_resolver = EnvironmentCredentialsResolver()
+        print(f"[SESSION] Using credentials: {boto3_creds.access_key[:10]}...")
+        
         config = Config(
-            endpoint_uri=f"https://bedrock-runtime.{self.region}.amazonaws.com",
+            endpoint_uri=endpoint,
             region=self.region,
-            aws_credentials_identity_resolver=EnvironmentCredentialsResolver(),
+            aws_credentials_identity_resolver=credential_resolver,
         )
         self.bedrock_client = BedrockRuntimeClient(config=config)
+        print("[SESSION] Bedrock client created")
 
     async def initialize_stream(self):
         """Initialize the bidirectional stream with Bedrock."""
@@ -63,12 +85,33 @@ class S2sSessionManager:
             self._initialize_client()
         print("[SESSION] Client initialized")
 
-        # Initialize the stream
-        print("[SESSION] Opening bidirectional stream...")
-        self.stream = await self.bedrock_client.invoke_model_with_bidirectional_stream(
-            InvokeModelWithBidirectionalStreamOperationInput(model_id=self.model_id)
-        )
-        print("[SESSION] Stream opened")
+        # Initialize the stream with timeout
+        print(f"[SESSION] Opening bidirectional stream to model: {self.model_id} in region: {self.region}")
+        try:
+            # Add 10 second timeout to prevent hanging
+            self.stream = await asyncio.wait_for(
+                self.bedrock_client.invoke_model_with_bidirectional_stream(
+                    InvokeModelWithBidirectionalStreamOperationInput(model_id=self.model_id)
+                ),
+                timeout=10.0
+            )
+            print("[SESSION] Stream opened successfully")
+        except asyncio.TimeoutError:
+            print("[SESSION] TIMEOUT ERROR: Bedrock stream connection timed out after 10 seconds")
+            print("[SESSION] This usually indicates a permission issue or network problem")
+            raise Exception("Bedrock connection timeout - likely missing bedrock:InvokeModelWithBidirectionalStream permission")
+        except Exception as e:
+            error_msg = str(e)
+            print(f"[SESSION] ERROR opening stream: {error_msg}")
+            if "AccessDenied" in error_msg or "UnauthorizedOperation" in error_msg:
+                print("[SESSION] PERMISSION ERROR: Missing bedrock:InvokeModelWithBidirectionalStream permission")
+            elif "ValidationException" in error_msg:
+                print("[SESSION] VALIDATION ERROR: Invalid model ID or request format")
+            elif "ThrottlingException" in error_msg:
+                print("[SESSION] THROTTLING ERROR: Rate limit exceeded")
+            else:
+                print(f"[SESSION] UNKNOWN ERROR: {type(e).__name__}: {error_msg}")
+            raise
         self.is_active = True
         
         # Start listening for responses

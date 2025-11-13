@@ -10,7 +10,7 @@
         "AWS_REGION": "us-east-1",
         "FASTMCP_LOG_LEVEL": "ERROR"
       },
-      "disabled": false,
+      "disabled": true,
       "autoApprove": [],
       "type": "stdio"
     },
@@ -22,7 +22,7 @@
       "env": {
         "FASTMCP_LOG_LEVEL": "ERROR"
       },
-      "disabled": false,
+      "disabled": true,
       "autoApprove": [
         "search_docs",
         "fetch_doc"

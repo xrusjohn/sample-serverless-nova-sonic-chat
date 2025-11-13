@@ -12,6 +12,7 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import { Construct } from 'constructs';
 import * as path from 'path';
+import { CanaryDashboard } from './constructs/canary-dashboard';
 
 export interface SonicCanaryServiceStackProps extends cdk.StackProps {
   vpc: ec2.IVpc;
@@ -45,7 +46,13 @@ export class SonicCanaryServiceStack extends cdk.Stack {
     });
 
     taskRole.addToPolicy(new iam.PolicyStatement({
-      actions: ['bedrock:InvokeModelWithResponseStream'],
+      actions: [
+        'bedrock:InvokeModel',
+        'bedrock:InvokeModelWithResponseStream',
+        'bedrock:InvokeModelWithBidirectionalStream',
+        'bedrock:ListFoundationModels',
+        'bedrock:GetFoundationModel'
+      ],
       resources: ['*'],
     }));
 
@@ -125,6 +132,12 @@ export class SonicCanaryServiceStack extends cdk.Stack {
       secrets: {
         CW_CONFIG_CONTENT: ecs.Secret.fromSsmParameter(cwAgentConfig),
       },
+      portMappings: [
+        {
+          containerPort: 4316,
+          protocol: ecs.Protocol.TCP,
+        }
+      ],
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: 'ecs-cwagent',
         logRetention: logs.RetentionDays.ONE_WEEK,
@@ -156,7 +169,7 @@ export class SonicCanaryServiceStack extends cdk.Stack {
         OTEL_AWS_APPLICATION_SIGNALS_EXPORTER_ENDPOINT: 'http://localhost:4316/v1/metrics',
         OTEL_METRICS_EXPORTER: 'none',
         OTEL_AWS_APPLICATION_SIGNALS_ENABLED: 'true',
-        OTEL_RESOURCE_ATTRIBUTES: 'service.name=sonic-agent,aws.log.group.names=/ecs/sonic-agent',
+        OTEL_RESOURCE_ATTRIBUTES: 'service.name=sonic-agent,aws.log.group.names=/ecs/sonic-agent&/aws/lambda/SonicCanaryServiceStack-CanaryFunction',
         OTEL_PROPAGATORS: 'tracecontext,baggage,b3,xray',
       },
       portMappings: [{
@@ -241,7 +254,15 @@ export class SonicCanaryServiceStack extends cdk.Stack {
     this.canaryFunction = new lambda.Function(this, 'CanaryFunction', {
       runtime: lambda.Runtime.PYTHON_3_12,
       handler: 'sonic_canary_lambda.handler',
-      code: lambda.Code.fromAsset(path.join(__dirname, '../../python-agent')),
+      code: lambda.Code.fromAsset(path.join(__dirname, '../../python-agent'), {
+        bundling: {
+          image: lambda.Runtime.PYTHON_3_12.bundlingImage,
+          command: [
+            'bash', '-c',
+            'pip install -r requirements.txt -t /asset-output && cp -r . /asset-output/'
+          ],
+        },
+      }),
       timeout: cdk.Duration.minutes(5),
       memorySize: 512,
       environment: {
@@ -278,5 +299,8 @@ export class SonicCanaryServiceStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'CanaryFunctionName', {
       value: this.canaryFunction.functionName,
     });
+
+    // Add CloudWatch Dashboard
+    new CanaryDashboard(this, 'CanaryDashboard');
   }
 }

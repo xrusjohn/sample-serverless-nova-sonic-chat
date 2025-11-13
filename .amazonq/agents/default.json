@@ -58,8 +58,6 @@
     "fs_write",
     "report_issue",
     "use_aws",
-    "@AWS Cloud Control API MCP Server",
-    "@strands-agents",
     "@bedrock-agentcore-mcp-server",
     "@awslabs_aws-api-mcp-server",
     "fsRead",
@@ -71,7 +69,9 @@
     "codeReview",
     "displayFindings",
     "@aws-knowledge",
-    "@awslabs_cdk-mcp-server"
+    "@awslabs_cdk-mcp-server",
+    "@strands-agents",
+    "@AWS Cloud Control API MCP Server"
   ],
   "toolAliases": {},
   "allowedTools": [

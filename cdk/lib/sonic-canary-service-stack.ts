@@ -98,7 +98,7 @@ export class SonicCanaryServiceStack extends cdk.Stack {
     });
 
     const initContainer = taskDefinition.addContainer('init', {
-      image: ecs.ContainerImage.fromRegistry('public.ecr.aws/aws-observability/adot-autoinstrumentation-python:latest'),
+      image: ecs.ContainerImage.fromRegistry('public.ecr.aws/aws-observability/adot-autoinstrumentation-python:v0.12.2'),
       essential: false,
       command: ['cp', '-a', '/autoinstrumentation/.', '/otel-auto-instrumentation-python'],
       logging: ecs.LogDrivers.awsLogs({
@@ -113,9 +113,11 @@ export class SonicCanaryServiceStack extends cdk.Stack {
       readOnly: false,
     });
 
+
+
     const cwAgentContainer = taskDefinition.addContainer('ecs-cwagent', {
       image: ecs.ContainerImage.fromRegistry('public.ecr.aws/cloudwatch-agent/cloudwatch-agent:latest'),
-      essential: true,
+      essential: false,
       secrets: {
         CW_CONFIG_CONTENT: ecs.Secret.fromSsmParameter(cwAgentConfig),
       },
@@ -164,6 +166,8 @@ export class SonicCanaryServiceStack extends cdk.Stack {
       condition: ecs.ContainerDependencyCondition.SUCCESS,
     });
 
+
+
     const alb = new elbv2.ApplicationLoadBalancer(this, 'ALB', {
       vpc,
       internetFacing: true,
@@ -203,6 +207,7 @@ export class SonicCanaryServiceStack extends cdk.Stack {
       minHealthyPercent: 0,
       maxHealthyPercent: 200,
       healthCheckGracePeriod: cdk.Duration.seconds(120),
+      circuitBreaker: { rollback: true },
     });
 
     service.attachToApplicationTargetGroup(targetGroup);

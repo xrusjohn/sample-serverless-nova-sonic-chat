@@ -13,6 +13,7 @@ This is a sample implementation for deploying a Nova Sonic application using ser
 - Automatic resume for conversations exceeding 8 minutes (current Nova Sonic limit)
 - Chat UI implementation using Next.js + shadcn
 - Automated canary testing system for continuous monitoring
+- **ECS Fargate deployment option** - Run WebSocket agent on ECS with Application Load Balancer
 
 ## Deployment Instructions
 
@@ -169,6 +170,25 @@ The application includes an automated canary testing system that validates funct
 - **Real-time validation**: Uses the same AppSync Events and DynamoDB as the main application
 
 For detailed information, see [canary/README.md](canary/README.md).
+
+### ECS Fargate Deployment
+
+For production workloads requiring persistent WebSocket connections, the application can be deployed on ECS Fargate:
+
+- **No cold starts**: Always-on containers for consistent performance
+- **WebSocket support**: Native WebSocket server with Application Load Balancer
+- **Health checks**: ALB health checks configured to accept HTTP 426 from WebSocket endpoints
+- **Auto-scaling**: Automatic scaling based on CPU/memory or connection count
+- **Production-ready**: Suitable for high-traffic, mission-critical deployments
+
+To deploy the ECS stack:
+
+```sh
+cd cdk
+npx cdk deploy SonicCanaryFoundationStack SonicCanaryServiceStack
+```
+
+See [ECS_DEPLOYMENT_SUCCESS.md](ECS_DEPLOYMENT_SUCCESS.md) for deployment details and troubleshooting.
 
 ### Other Notes
 

@@ -9,6 +9,7 @@ import * as events from 'aws-cdk-lib/aws-events';
 import * as targets from 'aws-cdk-lib/aws-events-targets';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import * as ssm from 'aws-cdk-lib/aws-ssm';
 import { Construct } from 'constructs';
 import * as path from 'path';
 
@@ -48,13 +49,83 @@ export class SonicCanaryServiceStack extends cdk.Stack {
       resources: ['*'],
     }));
 
+    taskRole.addToPolicy(new iam.PolicyStatement({
+      actions: [
+        'xray:PutTraceSegments',
+        'xray:PutTelemetryRecords',
+        'cloudwatch:PutMetricData',
+      ],
+      resources: ['*'],
+    }));
+
+    const executionRole = new iam.Role(this, 'TaskExecutionRole', {
+      assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
+      managedPolicies: [
+        iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AmazonECSTaskExecutionRolePolicy'),
+      ],
+    });
+
+    executionRole.addToPolicy(new iam.PolicyStatement({
+      actions: ['ssm:GetParameter'],
+      resources: [`arn:aws:ssm:${this.region}:${this.account}:parameter/ecs-cwagent`],
+    }));
+
+    const cwAgentConfig = new ssm.StringParameter(this, 'CWAgentConfig', {
+      parameterName: 'ecs-cwagent',
+      stringValue: JSON.stringify({
+        traces: {
+          traces_collected: {
+            application_signals: {},
+          },
+        },
+        logs: {
+          metrics_collected: {
+            application_signals: {},
+          },
+        },
+      }),
+    });
+
     const taskDefinition = new ecs.FargateTaskDefinition(this, 'TaskDef', {
       memoryLimitMiB: 2048,
       cpu: 1024,
       taskRole,
+      executionRole,
     });
 
-    taskDefinition.addContainer('AgentContainer', {
+    taskDefinition.addVolume({
+      name: 'opentelemetry-auto-instrumentation-python',
+    });
+
+    const initContainer = taskDefinition.addContainer('init', {
+      image: ecs.ContainerImage.fromRegistry('public.ecr.aws/aws-observability/adot-autoinstrumentation-python:latest'),
+      essential: false,
+      command: ['cp', '-a', '/autoinstrumentation/.', '/otel-auto-instrumentation-python'],
+      logging: ecs.LogDrivers.awsLogs({
+        streamPrefix: 'init',
+        logRetention: logs.RetentionDays.ONE_WEEK,
+      }),
+    });
+
+    initContainer.addMountPoints({
+      sourceVolume: 'opentelemetry-auto-instrumentation-python',
+      containerPath: '/otel-auto-instrumentation-python',
+      readOnly: false,
+    });
+
+    const cwAgentContainer = taskDefinition.addContainer('ecs-cwagent', {
+      image: ecs.ContainerImage.fromRegistry('public.ecr.aws/cloudwatch-agent/cloudwatch-agent:latest'),
+      essential: true,
+      secrets: {
+        CW_CONFIG_CONTENT: ecs.Secret.fromSsmParameter(cwAgentConfig),
+      },
+      logging: ecs.LogDrivers.awsLogs({
+        streamPrefix: 'ecs-cwagent',
+        logRetention: logs.RetentionDays.ONE_WEEK,
+      }),
+    });
+
+    const agentContainer = taskDefinition.addContainer('AgentContainer', {
       image: ecs.ContainerImage.fromDockerImageAsset(agentImage),
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: 'sonic-agent',
@@ -62,11 +133,35 @@ export class SonicCanaryServiceStack extends cdk.Stack {
       }),
       environment: {
         BEDROCK_REGION: bedrockRegion,
+        PYTHONPATH: '/otel-auto-instrumentation-python/opentelemetry/instrumentation/auto_instrumentation:/app:/otel-auto-instrumentation-python',
+        OTEL_EXPORTER_OTLP_PROTOCOL: 'http/protobuf',
+        OTEL_TRACES_SAMPLER: 'xray',
+        OTEL_TRACES_SAMPLER_ARG: 'endpoint=http://localhost:2000',
+        OTEL_LOGS_EXPORTER: 'none',
+        OTEL_PYTHON_DISTRO: 'aws_distro',
+        OTEL_PYTHON_CONFIGURATOR: 'aws_configurator',
+        OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: 'http://localhost:4316/v1/traces',
+        OTEL_AWS_APPLICATION_SIGNALS_EXPORTER_ENDPOINT: 'http://localhost:4316/v1/metrics',
+        OTEL_METRICS_EXPORTER: 'none',
+        OTEL_AWS_APPLICATION_SIGNALS_ENABLED: 'true',
+        OTEL_RESOURCE_ATTRIBUTES: 'service.name=sonic-agent',
+        OTEL_PROPAGATORS: 'tracecontext,baggage,b3,xray',
       },
       portMappings: [{
         containerPort: 9000,
         protocol: ecs.Protocol.TCP,
       }],
+    });
+
+    agentContainer.addMountPoints({
+      sourceVolume: 'opentelemetry-auto-instrumentation-python',
+      containerPath: '/otel-auto-instrumentation-python',
+      readOnly: false,
+    });
+
+    agentContainer.addContainerDependencies({
+      container: initContainer,
+      condition: ecs.ContainerDependencyCondition.SUCCESS,
     });
 
     const alb = new elbv2.ApplicationLoadBalancer(this, 'ALB', {
@@ -88,9 +183,10 @@ export class SonicCanaryServiceStack extends cdk.Stack {
         path: '/health',
         protocol: elbv2.Protocol.HTTP,
         healthyThresholdCount: 2,
-        unhealthyThresholdCount: 3,
-        timeout: cdk.Duration.seconds(5),
+        unhealthyThresholdCount: 5,
+        timeout: cdk.Duration.seconds(10),
         interval: cdk.Duration.seconds(30),
+        healthyHttpCodes: '200,426',
       },
       stickinessCookieDuration: cdk.Duration.hours(1),
     });
@@ -106,6 +202,7 @@ export class SonicCanaryServiceStack extends cdk.Stack {
       assignPublicIp: true,
       minHealthyPercent: 0,
       maxHealthyPercent: 200,
+      healthCheckGracePeriod: cdk.Duration.seconds(120),
     });
 
     service.attachToApplicationTargetGroup(targetGroup);

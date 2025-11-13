@@ -10,7 +10,6 @@ import websockets
 import json
 import os
 import warnings
-from http import HTTPStatus
 from s2s_session_manager_full import S2sSessionManager
 
 # Force unbuffered output
@@ -20,6 +19,8 @@ sys.stderr.reconfigure(line_buffering=True)
 # Suppress AWS CRT cleanup warnings
 warnings.filterwarnings('ignore', message='.*CANCELLED.*')
 warnings.filterwarnings('ignore', message='.*InvalidStateError.*')
+warnings.filterwarnings('ignore', message='.*invalid Connection header.*')
+warnings.filterwarnings('ignore', category=UserWarning, module='websockets')
 
 BEDROCK_REGION = os.environ.get('BEDROCK_REGION', 'us-east-1')
 
@@ -172,21 +173,14 @@ async def forward_bedrock_to_client(websocket, session: S2sSessionManager):
         import traceback
         traceback.print_exc()
 
-async def health_check_handler(connection, request):
-    """Intercept HTTP requests BEFORE WebSocket upgrade"""
-    if request.path == '/health':
-        return connection.respond(HTTPStatus.OK, '{"status": "healthy"}\n')
-    return None
-
 async def run_server(host='0.0.0.0', port=None):
-    """Run WebSocket server with HTTP health check support"""
+    """Run WebSocket server"""
     port = port or int(os.environ.get('PORT', 9000))
     
     print(f"Starting Nova Sonic WebSocket agent on ws://{host}:{port}")
     
-    async with websockets.serve(handle_client, host, port, process_request=health_check_handler):
+    async with websockets.serve(handle_client, host, port):
         print(f"[AGENT] WebSocket server ready on ws://{host}:{port}")
-        print(f"[AGENT] Health check available on http://{host}:{port}/health")
         await asyncio.Future()  # run forever
 
 def handle_exception(loop, context):
@@ -194,12 +188,10 @@ def handle_exception(loop, context):
     exception = context.get('exception')
     if exception:
         exc_str = str(exception)
-        if 'CANCELLED' in exc_str or 'InvalidStateError' in exc_str:
-            # Suppress expected AWS CRT cleanup errors
+        if 'CANCELLED' in exc_str or 'InvalidStateError' in exc_str or 'invalid Connection header' in exc_str:
             return
-    # Log other exceptions
     msg = context.get('message', 'Unhandled exception')
-    if 'CANCELLED' not in msg and 'InvalidStateError' not in msg:
+    if 'CANCELLED' not in msg and 'InvalidStateError' not in msg and 'invalid Connection header' not in msg:
         print(f"[AGENT] Async exception: {msg}")
         if exception:
             print(f"[AGENT] Exception: {exception}")

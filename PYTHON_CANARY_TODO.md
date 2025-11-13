@@ -472,39 +472,21 @@ NEW: Client → Lambda Function URL → Lambda Web Adapter → WebSocket Server 
 - ✅ Simpler architecture
 - ✅ Better streaming performance
 
-### ✅ Task 6.2: Deploy Both ECS Fargate and App Runner
-
-**Strategy:** Deploy agent in both ECS and App Runner for comparison
-
-**Shared:**
-- [x] Created Dockerfile for sonic_agent_local.py
-- [x] Health check configuration
-- [x] Environment variables (BEDROCK_REGION, PORT)
+### ✅ Task 6.2: Deploy ECS Fargate
 
 **ECS Fargate Implementation:**
-- [x] Created `ecs-agent.ts` construct
+- [x] Created Dockerfile for sonic_agent_local.py
+- [x] Created `sonic-canary-service-stack.ts`
 - [x] VPC and ECS Cluster setup
-- [x] Fargate task definition (1024 MB, 512 CPU)
+- [x] Fargate task definition (2048 MB, 1024 CPU)
 - [x] Application Load Balancer with sticky sessions
-- [x] Auto-scaling configuration
+- [x] Health check configuration (accepts HTTP 426)
 - [x] CloudWatch logs integration
-- [ ] Deploy and test
+- [x] **DEPLOYED AND STABLE** ✅
+- [x] Service running with 1 healthy target
 
-**App Runner Implementation:**
-- [x] Created `apprunner-agent.ts` construct
-- [x] ECR image asset build
-- [x] IAM roles for Bedrock access
-- [x] Auto-scaling (default config)
-- [x] Built-in HTTPS/WSS
-- [ ] Deploy and test
-
-**Comparison Points:**
-- Deployment complexity
-- Cold start behavior
-- Auto-scaling responsiveness
-- Cost (always-on vs traffic-based)
-- WebSocket connection stability
-- Operational overhead
+**App Runner Note:**
+❌ App Runner doesn't support bidirectional WebSocket connections, only HTTP/HTTPS. ECS Fargate is the correct choice for WebSocket servers.
 
 ### ✅ Task 6.3: Add Dashboard to Stack
 **What:** Integrate CloudWatch dashboard with both Node.js and Python metrics
@@ -522,38 +504,7 @@ NEW: Client → Lambda Function URL → Lambda Web Adapter → WebSocket Server 
 - Connect time metrics
 - Bedrock usage metrics
 
-### ☐ Task 6.4: Deploy and Compare
-**What:** Deploy both ECS and App Runner, test with canary
 
-```bash
-# Deploy with both agents
-cd cdk
-npx cdk deploy NovaSonicCanaryStack --all
-
-# Test ECS endpoint
-python sonic_canary_cli.py --ws-url <ECS_URL>
-
-# Test App Runner endpoint  
-python sonic_canary_cli.py --ws-url <APPRUNNER_URL>
-```
-
-**Metrics to Compare:**
-- Connection establishment time
-- Turn 1 & 2 latency
-- Success rate
-- Cost per hour
-- Deployment time
-**What:** Verify agent works with Lambda Web Adapter
-
-```bash
-# Deploy updated stack
-cd cdk
-npx cdk deploy NovaSonicCanaryStack
-
-# Test with CLI
-cd python-agent
-python sonic_canary_cli.py --ws-url <FUNCTION_URL>
-```
 
 ---
 
@@ -657,6 +608,9 @@ Create `cdk/lib/constructs/python-canary-dashboard.ts`:
 ## Success Criteria
 
 ✅ **CLI works:** Can run 2-turn test from command line  
+✅ **ECS deployed:** Agent running on ECS Fargate with ALB  
+✅ **Health checks:** ALB accepting HTTP 426 from WebSocket server  
+✅ **Service stable:** No restart loops, 1 healthy target  
 ☐ **Lambda works:** Scheduled canary runs every 5 minutes  
 ☐ **Metrics publish:** All timing metrics appear in CloudWatch  
 ☐ **Recordings saved:** Audio and transcripts saved to S3  
